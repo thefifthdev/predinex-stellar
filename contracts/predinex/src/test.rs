@@ -1,6 +1,9 @@
 #![cfg(test)]
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env,
+};
 
 #[test]
 fn test_create_pool() {
@@ -17,7 +20,14 @@ fn test_create_pool() {
     let outcome_b = String::from_str(&env, "No");
     let duration = 3600;
 
-    let pool_id = client.create_pool(&creator, &title, &description, &outcome_a, &outcome_b, &duration);
+    let pool_id = client.create_pool(
+        &creator,
+        &title,
+        &description,
+        &outcome_a,
+        &outcome_b,
+        &duration,
+    );
     assert_eq!(pool_id, 1);
 
     let pool = client.get_pool(&pool_id).unwrap();
@@ -42,7 +52,7 @@ fn test_place_bet() {
 
     let creator = Address::generate(&env);
     let user = Address::generate(&env);
-    
+
     token_admin_client.mint(&user, &1000);
 
     let title = String::from_str(&env, "Market 1");
@@ -51,7 +61,14 @@ fn test_place_bet() {
     let outcome_b = String::from_str(&env, "No");
     let duration = 3600;
 
-    let pool_id = client.create_pool(&creator, &title, &description, &outcome_a, &outcome_b, &duration);
+    let pool_id = client.create_pool(
+        &creator,
+        &title,
+        &description,
+        &outcome_a,
+        &outcome_b,
+        &duration,
+    );
 
     client.place_bet(&user, &pool_id, &0, &100);
 
@@ -79,7 +96,7 @@ fn test_settle_and_claim() {
     let creator = Address::generate(&env);
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
-    
+
     token_admin_client.mint(&user1, &1000);
     token_admin_client.mint(&user2, &1000);
 
@@ -89,7 +106,14 @@ fn test_settle_and_claim() {
     let outcome_b = String::from_str(&env, "No");
     let duration = 3600;
 
-    let pool_id = client.create_pool(&creator, &title, &description, &outcome_a, &outcome_b, &duration);
+    let pool_id = client.create_pool(
+        &creator,
+        &title,
+        &description,
+        &outcome_a,
+        &outcome_b,
+        &duration,
+    );
 
     client.place_bet(&user1, &pool_id, &0, &100);
     client.place_bet(&user2, &pool_id, &1, &100);
@@ -103,8 +127,8 @@ fn test_settle_and_claim() {
 
     // User 1 claims
     let winnings = client.claim_winnings(&user1, &pool_id);
-    
-    // Total pool = 200. Fee (2%) = 4. Net = 196. 
+
+    // Total pool = 200. Fee (2%) = 4. Net = 196.
     // User1 bet 100 on winning outcome (0). Total winners = 100.
     // Share = 100 * 196 / 100 = 196.
     assert_eq!(winnings, 196);
