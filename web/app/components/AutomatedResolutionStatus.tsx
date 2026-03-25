@@ -53,6 +53,13 @@ export default function AutomatedResolutionStatus() {
   const [fallbackStatuses, setFallbackStatuses] = useState<FallbackStatus[]>([]);
   const [selectedTab, setSelectedTab] = useState<'automated' | 'pending' | 'fallback'>('automated');
 
+  // Effect-managed clock so render output is derived from state, not direct Date.now() calls
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Mock data for demonstration
   useEffect(() => {
     const mockPools: Pool[] = [
@@ -179,7 +186,6 @@ export default function AutomatedResolutionStatus() {
   };
 
   const formatTimeRemaining = (expiry: number) => {
-    const now = Date.now();
     const remaining = expiry - now;
     
     if (remaining <= 0) return 'Expired';
@@ -233,11 +239,11 @@ export default function AutomatedResolutionStatus() {
                       <span className={`px-2 py-1 rounded text-xs ${
                         pool.settled 
                           ? 'bg-green-500/10 text-green-500' 
-                          : pool.expiry < Date.now()
+                          : pool.expiry < now
                           ? 'bg-red-500/10 text-red-500'
                           : 'bg-blue-500/10 text-blue-500'
                       }`}>
-                        {pool.settled ? 'Resolved' : pool.expiry < Date.now() ? 'Expired' : 'Active'}
+                        {pool.settled ? 'Resolved' : pool.expiry < now ? 'Expired' : 'Active'}
                       </span>
                     </div>
                     <h4 className="font-semibold text-lg mb-1">{pool.title}</h4>
@@ -320,7 +326,7 @@ export default function AutomatedResolutionStatus() {
   const renderPendingResolution = () => {
     const pendingPools = pools.filter(pool => {
       const config = getPoolConfig(pool.id);
-      return config && config.isAutomated && !pool.settled && pool.expiry < Date.now();
+      return config && config.isAutomated && !pool.settled && pool.expiry < now;
     });
 
     return (
