@@ -5,9 +5,26 @@ import { fetchCallReadOnlyFunction, cvToValue, uintCV } from "@stacks/transactio
 import { PoolData } from "./market-types";
 import { getRuntimeConfig } from "./runtime-config";
 
+let didLogMarketDiscoveryNetwork = false;
+
 function getStacksNetwork(): StacksNetwork {
   const { network } = getRuntimeConfig();
   return network === 'testnet' ? STACKS_TESTNET : STACKS_MAINNET;
+}
+
+function logMarketDiscoveryNetworkOnce(): void {
+  if (didLogMarketDiscoveryNetwork) return;
+  didLogMarketDiscoveryNetwork = true;
+
+  try {
+    const cfg = getRuntimeConfig();
+    const stacksNetwork = getStacksNetwork();
+    console.info(
+      `[market-discovery] network=${cfg.network} coreApiUrl=${stacksNetwork.coreApiUrl} contract=${cfg.contract.id}`
+    );
+  } catch (e) {
+    // If config is invalid/missing, fail-fast will throw elsewhere; avoid masking it here.
+  }
 }
 
 /**
@@ -15,6 +32,7 @@ function getStacksNetwork(): StacksNetwork {
  */
 export async function getPoolCount(): Promise<number> {
   try {
+    logMarketDiscoveryNetworkOnce();
     const cfg = getRuntimeConfig();
     const network = getStacksNetwork();
     const result = await fetchCallReadOnlyFunction({
@@ -39,6 +57,7 @@ export async function getPoolCount(): Promise<number> {
  */
 export async function getEnhancedPool(poolId: number): Promise<PoolData | null> {
   try {
+    logMarketDiscoveryNetworkOnce();
     const cfg = getRuntimeConfig();
     const network = getStacksNetwork();
     const result = await fetchCallReadOnlyFunction({
@@ -79,6 +98,7 @@ export async function getEnhancedPool(poolId: number): Promise<PoolData | null> 
  */
 export async function getPoolsBatch(startId: number, count: number): Promise<PoolData[]> {
   try {
+    logMarketDiscoveryNetworkOnce();
     const cfg = getRuntimeConfig();
     const network = getStacksNetwork();
     // Try to use the batch function if available
@@ -177,6 +197,7 @@ export async function getPoolStats(poolId: number): Promise<{
   percentageB: number;
 } | null> {
   try {
+    logMarketDiscoveryNetworkOnce();
     const cfg = getRuntimeConfig();
     const network = getStacksNetwork();
     const result = await fetchCallReadOnlyFunction({
