@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useStacks } from './StacksProvider';
+import { useWallet } from './WalletAdapterProvider';
 import { useWalletConnect } from '../lib/hooks/useWalletConnect';
 import { openContractCall } from '@stacks/connect';
 import { uintCV, stringAsciiCV } from '@stacks/transactions';
@@ -30,7 +30,7 @@ interface PoolStats {
 }
 
 export default function PoolIntegration() {
-  const { userData } = useStacks();
+  const { isConnected } = useWallet();
   const { session } = useWalletConnect();
   const [pools, setPools] = useState<Pool[]>([]);
   const [stats, setStats] = useState<PoolStats>({
@@ -221,7 +221,7 @@ export default function PoolIntegration() {
                   </div>
 
                   {/* Action Button */}
-                  {!pool.settled && (session?.isConnected || userData) && (
+                  {!pool.settled && (session?.isConnected || isConnected) && (
                     <button className="w-full py-2 bg-primary hover:bg-violet-600 text-white font-bold rounded-lg transition-all">
                       Place Bet
                     </button>

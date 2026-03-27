@@ -1,6 +1,6 @@
 'use client';
 
-import { useAppKit } from '../lib/hooks/useAppKit';
+import { useWallet } from '../app/components/WalletAdapterProvider';
 import { Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useToast } from '../providers/ToastProvider';
@@ -10,13 +10,13 @@ import {
   withTimeout,
 } from '../app/lib/network-errors';
 
-interface AppKitButtonProps {
+interface WalletButtonProps {
   className?: string;
   label?: string;
 }
 
-export default function AppKitButton({ className, label = 'Connect Wallet' }: AppKitButtonProps) {
-  const { open, isConnected, address } = useAppKit();
+export default function WalletButton({ className, label = 'Connect Wallet' }: WalletButtonProps) {
+  const { connect, disconnect, isConnected, address } = useWallet();
   const [mounted, setMounted] = useState(false);
   const { showToast } = useToast();
 
@@ -39,7 +39,7 @@ export default function AppKitButton({ className, label = 'Connect Wallet' }: Ap
 
   const handleConnect = async () => {
     try {
-      await withTimeout(open(), 15000, 'Wallet connection timeout');
+      await withTimeout(Promise.resolve(connect()), 15000, 'Wallet connection timeout');
     } catch (error) {
       const issue = classifyConnectivityIssue(error);
       showToast(getConnectivityMessage(issue, 'Connecting wallet'), 'error');
@@ -57,7 +57,13 @@ export default function AppKitButton({ className, label = 'Connect Wallet' }: Ap
           {label}
         </button>
       ) : (
-        <w3m-button />
+        <button
+          onClick={() => disconnect()}
+          className={`flex items-center gap-2 bg-secondary/10 hover:bg-secondary/20 text-secondary px-4 py-2 rounded-full border border-secondary/20 transition-colors font-medium text-sm focus:outline-none focus:ring-2 focus:ring-secondary/50 ${className}`}
+        >
+          <Wallet className="w-4 h-4" />
+          {address ? `${address.slice(0, 4)}...${address.slice(-4)}` : 'Connected'}
+        </button>
       )}
     </>
   );

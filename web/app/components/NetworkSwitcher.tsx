@@ -1,6 +1,7 @@
 'use client';
 
-import { useAppKitNetwork, useAppKitAccount } from '@reown/appkit/react';
+import { useAppKitNetwork } from '@reown/appkit/react';
+import { useWallet } from './WalletAdapterProvider';
 import { Globe, Check, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { NetworkType } from '@/app/lib/wallet-service';
@@ -8,7 +9,7 @@ import { stacksNetworks } from '@/lib/appkit-config';
 
 export function NetworkSwitcher() {
   const { switchNetwork, caipNetwork } = useAppKitNetwork();
-  const { isConnected } = useAppKitAccount();
+  const { isConnected } = useWallet();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

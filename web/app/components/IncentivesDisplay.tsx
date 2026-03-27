@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useIncentives } from '../lib/hooks/useIncentives';
-import { useStacks } from './StacksProvider';
+import { useWallet } from './WalletAdapterProvider';
 import { getRuntimeConfig } from '../lib/runtime-config';
 import { getPool, getUserBet } from '../lib/stacks-api';
 import { calculateTotalIncentive, DEFAULT_INCENTIVE_CONFIG, BetterIncentive } from '../lib/liquidity-incentives';
@@ -98,9 +98,7 @@ export default function IncentivesDisplay({ betterId, poolId }: IncentivesDispla
   const { incentives, getPendingIncentives, getTotalPendingBonus, getClaimedIncentives, getTotalClaimedBonus, setIncentives, claimIncentive } = useIncentives();
   const [selectedTab, setSelectedTab] = useState<'pending' | 'claimed'>('pending');
   const [isLoading, setIsLoading] = useState(false);
-  const { userData } = useStacks();
-  
-  const userAddress = userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet || userData?.identityAddress;
+  const { address: userAddress } = useWallet();
   
   useEffect(() => {
     if (!userAddress) return;

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { callContract } from '@/lib/appkit-transactions';
 import { uintCV } from '@stacks/transactions';
-import { useAppKitAccount } from '@reown/appkit/react';
+import { useWallet } from '../app/components/WalletAdapterProvider';
 import { Loader2, Coins } from 'lucide-react';
 import { getRuntimeConfig } from '../app/lib/runtime-config';
 
@@ -16,7 +16,7 @@ interface ClaimWinningsButtonProps {
 export default function ClaimWinningsButton({ poolId, isSettled, userHasWinnings }: ClaimWinningsButtonProps) {
     const [isPending, setIsPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const { isConnected } = useAppKitAccount();
+    const { isConnected } = useWallet();
     const { contract } = getRuntimeConfig();
 
     const handleClaim = async () => {

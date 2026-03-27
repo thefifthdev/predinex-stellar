@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useStacks } from './StacksProvider';
+import { useWallet } from './WalletAdapterProvider';
 import { useDisputes } from '../lib/hooks/useDisputes';
 import { getPool } from '../lib/stacks-api';
 
@@ -65,7 +65,7 @@ async function fetchDisputesFromContract(): Promise<Dispute[]> {
 }
 
 export default function DisputeManagement() {
-  const { userData } = useStacks();
+  const { address } = useWallet();
   const { disputes: hookDisputes, addVote } = useDisputes();
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [userVotes, setUserVotes] = useState<DisputeVote[]>([]);
@@ -73,7 +73,7 @@ export default function DisputeManagement() {
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(0);
 
-  const userAddress = userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet || userData?.identityAddress;
+  const userAddress = address;
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 60000);

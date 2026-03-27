@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useStacks } from './StacksProvider';
+import { useWallet } from './WalletAdapterProvider';
 import { useWalletConnect } from '../lib/hooks/useWalletConnect';
 import IncentivesDisplay from './IncentivesDisplay';
 import { BarChart3, Wallet, Award, Gift } from 'lucide-react';
@@ -26,7 +26,7 @@ interface DashboardStats {
 }
 
 export default function Dashboard() {
-  const { userData } = useStacks();
+  const { isConnected, address } = useWallet();
   const { session } = useWalletConnect();
   const [stats, setStats] = useState<DashboardStats>({
     totalBets: 0,
@@ -41,10 +41,10 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'bets' | 'history' | 'incentives'>('overview');
 
   useEffect(() => {
-    if (session?.isConnected || userData) {
+    if (session?.isConnected || isConnected) {
       fetchUserData();
     }
-  }, [session, userData]);
+  }, [session, isConnected]);
 
   const fetchUserData = async () => {
     setIsLoading(true);
@@ -334,7 +334,7 @@ export default function Dashboard() {
       )}
 
       {activeTab === 'incentives' && (
-        <IncentivesDisplay betterId={userData?.address || session?.address} />
+        <IncentivesDisplay betterId={address || session?.address} />
       )}
 
       {/* Refresh Button */}

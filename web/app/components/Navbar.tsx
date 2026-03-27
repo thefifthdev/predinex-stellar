@@ -3,20 +3,18 @@
 import { useState } from "react";
 import Link from "next/link";
 import { LogOut, Menu, X, Wallet } from "lucide-react";
-import AppKitButton from "../../components/AppKitButton";
-import { useStacks } from "./StacksProvider";
+import { useWallet } from './WalletAdapterProvider';
 import { truncateAddress } from "../lib/utils";
 import { ICON_CLASS } from "../lib/constants";
 
 export default function Navbar() {
-    const { userData, signOut } = useStacks();
+    const { isConnected, address, connect, disconnect } = useWallet();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const stxAddress = userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet || userData?.identityAddress;
     const [copied, setCopied] = useState(false);
 
     const handleCopyAddress = () => {
-        if (stxAddress) {
-            navigator.clipboard.writeText(stxAddress);
+        if (address) {
+            navigator.clipboard.writeText(address);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }
@@ -41,12 +39,12 @@ export default function Navbar() {
                         <Link href="/create" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors" aria-label="Create a new prediction market">
                             Create
                         </Link>
-                        {userData && (
+                        {isConnected && (
                             <Link href="/activity" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors" aria-label="View activity feed">
                                 Activity
                             </Link>
                         )}
-                        {userData && (
+                        {isConnected && (
                             <Link href="/dashboard" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors" aria-label="User dashboard">
                                 Dashboard
                             </Link>
@@ -55,7 +53,7 @@ export default function Navbar() {
 
                     {/* User Info & Connect Button - Desktop */}
                     <div className="hidden md:flex items-center gap-4">
-                        {userData ? (
+                        {isConnected && address ? (
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={handleCopyAddress}
@@ -64,11 +62,11 @@ export default function Navbar() {
                                 >
                                     <Wallet className={ICON_CLASS.sm + " text-primary"} />
                                     <span className="text-sm font-mono font-medium">
-                                        {copied ? 'Copied!' : (stxAddress ? truncateAddress(stxAddress) : 'Connected')}
+                                        {copied ? 'Copied!' : truncateAddress(address)}
                                     </span>
                                 </button>
                                 <button
-                                    onClick={signOut}
+                                    onClick={disconnect}
                                     className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-full border border-red-500/20 transition-all hover:scale-110 active:scale-95"
                                     aria-label="Sign out"
                                     title="Sign out"
@@ -77,13 +75,25 @@ export default function Navbar() {
                                 </button>
                             </div>
                         ) : (
-                            <AppKitButton />
+                            <button
+                                onClick={connect}
+                                className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-full border border-primary/20 transition-colors font-medium text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            >
+                                <Wallet className={ICON_CLASS.sm + " text-primary"} />
+                                Connect Wallet
+                            </button>
                         )}
                     </div>
 
                     {/* Mobile Menu Button */}
                     <div className="md:hidden flex items-center gap-4">
-                        <AppKitButton />
+                        <button
+                            onClick={connect}
+                            className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 rounded-full border border-primary/20 transition-colors font-medium text-sm"
+                            aria-label="Connect wallet"
+                        >
+                            <Wallet className={ICON_CLASS.sm + " text-primary"} />
+                        </button>
                         <button
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
                             className="p-2 text-muted-foreground hover:text-foreground transition-colors"
@@ -122,7 +132,7 @@ export default function Navbar() {
                         >
                             Create
                         </Link>
-                        {userData && (
+                        {isConnected && (
                             <Link
                                 href="/activity"
                                 className="block px-3 py-2 text-base font-medium text-muted-foreground hover:text-primary hover:bg-muted/50 rounded-lg transition-colors"
@@ -131,7 +141,7 @@ export default function Navbar() {
                                 Activity
                             </Link>
                         )}
-                        {userData && (
+                        {isConnected && (
                             <>
                                 <Link
                                     href="/dashboard"
@@ -142,7 +152,7 @@ export default function Navbar() {
                                 </Link>
                                 <button
                                     onClick={() => {
-                                        signOut();
+                                        disconnect();
                                         setIsMenuOpen(false);
                                     }}
                                     className="w-full text-left px-3 py-2 text-base font-medium text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"

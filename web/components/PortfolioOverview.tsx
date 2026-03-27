@@ -1,12 +1,12 @@
 "use client";
 
-import { useAppKitAccount } from '@reown/appkit/react';
+import { useWallet } from '../app/components/WalletAdapterProvider';
 import { Wallet, CircleDollarSign, Info } from 'lucide-react';
 import Card from './ui/Card';
 import Tooltip from './ui/Tooltip';
 
 export default function PortfolioOverview() {
-    const { isConnected, address } = useAppKitAccount();
+    const { isConnected, address } = useWallet();
 
     if (!isConnected) return null;
 

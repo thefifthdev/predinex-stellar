@@ -1,14 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useStacks } from './StacksProvider';
-import { useWalletConnection } from '../../lib/hooks/useWalletConnection';
 import { useToast } from '../../providers/ToastProvider';
 import { openContractCall } from '@stacks/connect';
 import { uintCV } from '@stacks/transactions';
 import { getRuntimeConfig } from '../lib/runtime-config';
 import { Loader2, Wallet, AlertCircle } from 'lucide-react';
 import { Pool } from '@/app/lib/stacks-api';
+import { useWallet } from './WalletAdapterProvider';
 import {
     classifyConnectivityIssue,
     getConnectivityMessage,
@@ -21,8 +20,7 @@ interface BettingSectionProps {
 }
 
 export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSectionProps) {
-    const { userData, authenticate } = useStacks();
-    const { isConnected, address } = useWalletConnection();
+    const { isConnected, address, connect } = useWallet();
     const { showToast } = useToast();
     const { contract } = getRuntimeConfig();
     const [betAmount, setBetAmount] = useState("");
@@ -32,8 +30,8 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
     const walletBalance: number | null = isConnected ? 100.0 : null;
 
     const placeBet = async (outcome: number) => {
-        if (!userData) {
-            authenticate();
+        if (!isConnected) {
+            connect();
             return;
         }
 
@@ -108,14 +106,14 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
         );
     }
 
-    if (!userData && !isConnected) {
+    if (!isConnected) {
         return (
             <div className="text-center py-6 bg-muted/50 rounded-lg">
                 <Wallet className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                 <p className="text-lg font-bold mb-2">Connect Wallet to Bet</p>
                 <p className="text-muted-foreground mb-4">You need to connect your wallet to place bets on this market.</p>
                 <button
-                    onClick={authenticate}
+                    onClick={connect}
                     className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-6 py-3 rounded-full border border-primary/20 transition font-medium mx-auto hover:scale-105"
                 >
                     <Wallet className="w-5 h-5" />

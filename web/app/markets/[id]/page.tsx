@@ -3,7 +3,7 @@
 import Navbar from "../../components/Navbar";
 import BettingSection from "../../components/BettingSection";
 import ClaimWinningsButton from "../../../components/ClaimWinningsButton";
-import { useStacks } from "../../components/StacksProvider";
+import { useWallet } from "../../components/WalletAdapterProvider";
 import { useEffect, useState } from "react";
 import { getPool, Pool, getUserBet } from "../../lib/stacks-api";
 import { TrendingUp, Users, Clock } from "lucide-react";
@@ -14,8 +14,7 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
     const { id } = use(params);
     const poolId = parseInt(id);
 
-    const { userData } = useStacks();
-    const stxAddress = userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet || userData?.identityAddress;
+    const { address: stxAddress } = useWallet();
 
     const [pool, setPool] = useState<Pool | null>(null);
     const [isLoading, setIsLoading] = useState(true);
