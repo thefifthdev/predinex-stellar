@@ -10,6 +10,7 @@ import { useToast } from '../../providers/ToastProvider';
 import { validatePoolCreationForm } from '../lib/validators';
 import { getRuntimeConfig } from '../lib/runtime-config';
 import { useTxStatus } from '../lib/hooks/useTxStatus';
+import { useFeePreview } from '../lib/hooks/useFeePreview';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
 interface FormData {
@@ -31,6 +32,7 @@ export default function CreateMarket() {
     const [errors, setErrors] = useState<FormErrors>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [txState, trackTx] = useTxStatus();
+    const feePreview = useFeePreview(form.title, form.description);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -205,6 +207,23 @@ export default function CreateMarket() {
                                     aria-describedby={errors.duration ? 'duration-error' : undefined}
                                 />
                                 {errors.duration && <p id="duration-error" role="alert" className="mt-1 text-sm text-red-500">{errors.duration}</p>}
+                            </div>
+
+                            {/* Fee Preview */}
+                            <div aria-label="fee preview" className="rounded-lg border border-border bg-muted/40 p-4 text-sm space-y-1">
+                                <p className="font-medium mb-2 text-muted-foreground">Estimated Fees</p>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Protocol fee</span>
+                                    <span className="font-mono">{feePreview.protocolFee} STX</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Network fee (est.)</span>
+                                    <span className="font-mono">{feePreview.networkFee.toFixed(6)} STX</span>
+                                </div>
+                                <div className="flex justify-between border-t border-border pt-1 mt-1 font-semibold">
+                                    <span>Total</span>
+                                    <span className="font-mono">{feePreview.total.toFixed(6)} STX</span>
+                                </div>
                             </div>
 
                             <button
