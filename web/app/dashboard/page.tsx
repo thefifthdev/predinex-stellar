@@ -8,8 +8,9 @@ import ActiveBetsCard from "../components/dashboard/ActiveBetsCard";
 import { useUserActivity } from "../hooks/useUserActivity";
 import { useActiveBets } from "../lib/hooks/useActiveBets";
 import { useWallet } from "../components/WalletAdapterProvider";
+import RouteErrorBoundary from "../../components/RouteErrorBoundary";
 
-export default function Dashboard() {
+function DashboardContent() {
     const { address: stxAddress } = useWallet();
 
     const { activities, isLoading: activityLoading, error: activityError, refresh: refreshActivity } = useUserActivity(stxAddress, 5);
@@ -53,5 +54,13 @@ export default function Dashboard() {
                 </div>
             </AuthGuard>
         </main>
+    );
+}
+
+export default function Dashboard() {
+    return (
+        <RouteErrorBoundary routeName="Dashboard">
+            <DashboardContent />
+        </RouteErrorBoundary>
     );
 }

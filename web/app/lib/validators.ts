@@ -146,11 +146,11 @@ export function validateContractId(
   const address = id.slice(0, lastDot);
   const name = id.slice(lastDot + 1);
 
-  // Validate address format (SP/SM for mainnet, ST/SN for testnet, all 40 chars total)
-  if (!/^(SP|SM|ST|SN)[A-Z0-9]{38}$/.test(address)) {
+  // Validate address format (SP/SM for mainnet, ST/SN for testnet, 40–41 chars total)
+  if (!/^(SP|SM|ST|SN)[A-Z0-9]{38,39}$/.test(address)) {
     return {
       valid: false,
-      error: `Invalid contract address '${address}' in identifier '${id}'. Stacks addresses must be 40 characters starting with SP, SM (mainnet) or ST, SN (testnet).`,
+      error: `Invalid contract address '${address}' in identifier '${id}'. Stacks addresses must be 40–41 characters starting with SP, SM (mainnet) or ST, SN (testnet).`,
     };
   }
 

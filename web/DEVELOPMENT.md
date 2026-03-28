@@ -63,6 +63,14 @@ We use a custom component library located in `web/components/ui/`. Key component
 - `Tooltip`: Informational overlays.
 - `Toast`: Session notifications.
 
+## Contract Integration
+
+When working on features that touch the smart contract interface:
+
+- **Event schemas** — Refer to [docs/CONTRACT_EVENTS.md](./docs/CONTRACT_EVENTS.md) for the canonical event payload definitions. Do not reverse-engineer event structures from the contract source.
+- **Versioning & migrations** — All contract changes (breaking or otherwise) must follow the process in [docs/CONTRACT_VERSIONING.md](./docs/CONTRACT_VERSIONING.md). Breaking interface changes require an explicit major version bump and a migration note before the PR can be merged.
+- **Error boundaries** — Route-level components should be wrapped in `<RouteErrorBoundary routeName="...">` (see `web/components/RouteErrorBoundary.tsx`). Add the wrapper when creating new top-level pages.
+
 ## Testing
 
 ### Local CI/CD Checks

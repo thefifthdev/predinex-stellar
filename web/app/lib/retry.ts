@@ -51,7 +51,7 @@ export function computeBackoffDelay(attempt: number, opts: ResolvedRetryOptions)
   const exponential = opts.baseDelayMs * Math.pow(opts.backoffFactor, attempt);
   const capped = Math.min(exponential, opts.maxDelayMs);
   // Full jitter: random value in [0, capped]
-  return Math.floor(Math.random() * (capped + 1));
+  return Math.floor(Math.random() * capped);
 }
 
 /**
