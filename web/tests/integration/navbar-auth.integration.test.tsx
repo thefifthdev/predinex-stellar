@@ -1,38 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
-import * as StacksProvider from '@/components/StacksProvider';
+import * as WalletAdapterProvider from '../../app/components/WalletAdapterProvider';
 
-vi.mock('@/components/StacksProvider', () => ({
-  useStacks: vi.fn(),
-  StacksProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="stacks-provider">{children}</div>,
-}));
-
-vi.mock('@/app/hooks/useWalletConnection', () => ({
-  useWalletConnection: vi.fn(() => ({
-    leather: false,
-    xverse: false,
-    walletconnect: true,
-    hasAnyWallet: true,
-  })),
-  useWalletState: vi.fn(() => ({
-    isConnected: false,
-    address: null,
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-  })),
-}));
-
-vi.mock('@/lib/hooks/useAppKit', () => ({
-  useAppKit: vi.fn(() => ({
-    open: vi.fn(),
-    isConnected: false,
-    address: null,
-    status: 'disconnected',
-    chainId: undefined,
-    switchNetwork: vi.fn(),
-    close: vi.fn(),
-  })),
+vi.mock('../../app/components/WalletAdapterProvider', () => ({
+  useWallet: vi.fn(),
+  WalletAdapterProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -45,7 +18,25 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-import AuthGuard from '@/components/AuthGuard';
+import AuthGuard from '../../app/components/AuthGuard';
+
+const connectedWallet = {
+  chain: 'stacks' as const,
+  isConnected: true,
+  isLoading: false,
+  address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+};
+
+const disconnectedWallet = {
+  chain: 'stacks' as const,
+  isConnected: false,
+  isLoading: false,
+  address: null,
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+};
 
 describe('Navbar and Auth Integration', () => {
   beforeEach(() => {
@@ -54,11 +45,7 @@ describe('Navbar and Auth Integration', () => {
   });
 
   it('shows authentication required when not connected', () => {
-    vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: null,
-      authenticate: vi.fn(),
-      signOut: vi.fn(),
-    });
+    vi.mocked(WalletAdapterProvider.useWallet).mockReturnValue(disconnectedWallet);
 
     render(
       <AuthGuard>
@@ -70,11 +57,7 @@ describe('Navbar and Auth Integration', () => {
   });
 
   it('shows protected content when connected via Stacks', () => {
-    vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: { profile: { stxAddress: { mainnet: 'ST123' } } },
-      authenticate: vi.fn(),
-      signOut: vi.fn(),
-    });
+    vi.mocked(WalletAdapterProvider.useWallet).mockReturnValue(connectedWallet);
 
     render(
       <AuthGuard>
