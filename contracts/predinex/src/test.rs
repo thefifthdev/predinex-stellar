@@ -2,6 +2,7 @@
 extern crate std;
 use super::*;
 use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env};
+use soroban_sdk::String;
 
 #[test]
 fn test_create_pool() {
@@ -497,4 +498,315 @@ fn test_settle_pool_unauthorized_then_authorized_succeeds() {
     let pool = client.get_pool(&pool_id).unwrap();
     assert!(pool.settled);
     assert_eq!(pool.winning_outcome, Some(0));
+}
+
+#[test]
+fn test_get_user_bet_returns_correct_amounts() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin  = Address::generate(&env);
+    let user   = Address::generate(&env);
+    let token  = env.register_stellar_asset_contract_v2(admin.clone())
+        .address();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    client.initialize(&token);
+
+    let pool_id = client.create_pool(
+        &admin,
+        &String::from_str(&env, "Will it rain?"),
+        &String::from_str(&env, "A simple weather pool"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600u64,
+    );
+
+    // Fund user via the token admin
+    let token_client = soroban_sdk::token::StellarAssetClient::new(&env, &token);
+    token_client.mint(&user, &500i128);
+
+    // Place bet on outcome A (100 tokens)
+    client.place_bet(&user, &pool_id, &0u32, &100i128);
+    // Place bet on outcome B (200 tokens)
+    client.place_bet(&user, &pool_id, &1u32, &200i128);
+
+    let bet = client
+        .get_user_bet(&pool_id, &user)
+        .expect("bet must exist after placing");
+
+    assert_eq!(bet.amount_a, 100i128,  "amount_a must reflect outcome-0 bets");
+    assert_eq!(bet.amount_b, 200i128,  "amount_b must reflect outcome-1 bets");
+    assert_eq!(bet.total_bet, 300i128, "total_bet must be the sum of both sides");
+}
+
+#[test]
+fn test_get_user_bet_returns_none_for_user_with_no_bet() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin     = Address::generate(&env);
+    let no_bet_user = Address::generate(&env);
+    let token     = env.register_stellar_asset_contract_v2(admin.clone())
+        .address();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    client.initialize(&token);
+
+    let pool_id = client.create_pool(
+        &admin,
+        &String::from_str(&env, "Will it rain?"),
+        &String::from_str(&env, "A simple weather pool"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600u64,
+    );
+
+    // no_bet_user never called place_bet — must not panic
+    let result = client.get_user_bet(&pool_id, &no_bet_user);
+
+    assert!(
+        result.is_none(),
+        "get_user_bet must return None for a user who has not placed a bet"
+    );
+
+    // invalid outcome inputs tests
+    struct TestEnv<'a> {
+    env: Env,
+    client: PredinexContractClient<'a>,
+    admin: Address,
+    user: Address,
+    token: Address,
+}
+ 
+/// Boot a clean environment, deploy the contract, mint tokens to user.
+fn setup() -> TestEnv<'static> {
+    let env = Env::default();
+    env.mock_all_auths();
+ 
+    let admin = Address::generate(&env);
+    let user  = Address::generate(&env);
+ 
+    let token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+ 
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+ 
+    client.initialize(&token);
+ 
+    // Fund the user so token transfers in place_bet don't fail for balance reasons
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token);
+    token_admin.mint(&user, &10_000i128);
+ 
+    // Leak env lifetime — acceptable in tests where we own everything
+    let client: PredinexContractClient<'static> =
+        unsafe { core::mem::transmute(client) };
+    let env: Env = unsafe { core::mem::transmute(env) };
+ 
+    TestEnv { env, client, admin, user, token }
+}
+ 
+/// Create a pool with a 1-hour duration and return its ID.
+fn make_pool(t: &TestEnv) -> u32 {
+    t.client.create_pool(
+        &t.admin,
+        &String::from_str(&t.env, "Test pool"),
+        &String::from_str(&t.env, "Description"),
+        &String::from_str(&t.env, "Yes"),
+        &String::from_str(&t.env, "No"),
+        &3_600u64,
+    )
+}
+ 
+/// Expire a pool by advancing the ledger timestamp past its expiry.
+fn expire_pool(env: &Env) {
+    env.ledger().with_mut(|info| {
+        info.timestamp += 7_200; // 2 hours — well past the 1-hour pool duration
+    });
+}
+ 
+// ─── Suite A — place_bet invalid outcome ──────────────────────────────────────
+ 
+/// A1: outcome == 2 is the first out-of-range value and must be rejected.
+#[test]
+#[should_panic(expected = "Invalid outcome")]
+fn a1_place_bet_outcome_2_is_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &2u32, &100i128);
+}
+ 
+/// A2: outcome == u32::MAX is also out of range and must be rejected.
+#[test]
+#[should_panic(expected = "Invalid outcome")]
+fn a2_place_bet_outcome_max_u32_is_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &u32::MAX, &100i128);
+}
+ 
+/// A3: pool state (total_a, total_b) must not change after a rejected bet.
+///
+/// This is the "no state mutation" acceptance criterion. We verify by reading
+/// the pool before and after the failed call and asserting all totals are zero.
+#[test]
+fn a3_invalid_outcome_does_not_mutate_pool_state() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+ 
+    // Confirm pool starts clean
+    let pool_before = t.client.get_pool(&pool_id).expect("pool must exist");
+    assert_eq!(pool_before.total_a, 0i128);
+    assert_eq!(pool_before.total_b, 0i128);
+ 
+    // Attempt an invalid bet — must panic
+    let result = std::panic::catch_unwind(|| {
+        t.client.place_bet(&t.user, &pool_id, &2u32, &100i128);
+    });
+    assert!(result.is_err(), "invalid outcome bet must panic");
+ 
+    // Pool totals must be unchanged
+    let pool_after = t.client.get_pool(&pool_id).expect("pool must still exist");
+    assert_eq!(
+        pool_after.total_a, 0i128,
+        "total_a must not change after rejected bet"
+    );
+    assert_eq!(
+        pool_after.total_b, 0i128,
+        "total_b must not change after rejected bet"
+    );
+}
+ 
+/// A4: outcome == 0 is valid (boundary — lowest accepted value).
+#[test]
+fn a4_place_bet_outcome_0_is_valid() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+ 
+    // Must not panic
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+ 
+    let pool = t.client.get_pool(&pool_id).expect("pool must exist");
+    assert_eq!(pool.total_a, 100i128, "total_a must reflect outcome-0 bet");
+    assert_eq!(pool.total_b, 0i128,   "total_b must be unchanged");
+}
+ 
+/// A5: outcome == 1 is valid (boundary — highest accepted value).
+#[test]
+fn a5_place_bet_outcome_1_is_valid() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+ 
+    // Must not panic
+    t.client.place_bet(&t.user, &pool_id, &1u32, &200i128);
+ 
+    let pool = t.client.get_pool(&pool_id).expect("pool must exist");
+    assert_eq!(pool.total_a, 0i128,   "total_a must be unchanged");
+    assert_eq!(pool.total_b, 200i128, "total_b must reflect outcome-1 bet");
+}
+ 
+// ─── Suite B — settle_pool invalid outcome ────────────────────────────────────
+ 
+/// B1: winning_outcome == 2 must be rejected when settling.
+#[test]
+#[should_panic(expected = "Invalid outcome")]
+fn b1_settle_pool_winning_outcome_2_is_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &2u32);
+}
+ 
+/// B2: winning_outcome == u32::MAX must be rejected when settling.
+#[test]
+#[should_panic(expected = "Invalid outcome")]
+fn b2_settle_pool_winning_outcome_max_u32_is_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &u32::MAX);
+}
+ 
+/// B3: pool.settled must remain false after a rejected settle call.
+#[test]
+fn b3_invalid_winning_outcome_does_not_set_settled_flag() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+ 
+    let result = std::panic::catch_unwind(|| {
+        t.client.settle_pool(&t.admin, &pool_id, &2u32);
+    });
+    assert!(result.is_err(), "invalid winning_outcome must panic");
+ 
+    let pool = t.client.get_pool(&pool_id).expect("pool must still exist");
+    assert!(
+        !pool.settled,
+        "pool.settled must remain false after rejected settle"
+    );
+}
+ 
+/// B4: pool.winning_outcome must remain None after a rejected settle call.
+#[test]
+fn b4_invalid_winning_outcome_does_not_write_winning_outcome() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+ 
+    let result = std::panic::catch_unwind(|| {
+        t.client.settle_pool(&t.admin, &pool_id, &2u32);
+    });
+    assert!(result.is_err(), "invalid winning_outcome must panic");
+ 
+    let pool = t.client.get_pool(&pool_id).expect("pool must still exist");
+    assert!(
+        pool.winning_outcome.is_none(),
+        "pool.winning_outcome must remain None after rejected settle"
+    );
+}
+ 
+/// B5: winning_outcome == 0 settles correctly (boundary — lowest valid).
+#[test]
+fn b5_settle_pool_winning_outcome_0_is_valid() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+ 
+    // Must not panic
+    t.client.settle_pool(&t.admin, &pool_id, &0u32);
+ 
+    let pool = t.client.get_pool(&pool_id).expect("pool must exist");
+    assert!(pool.settled, "pool must be marked settled");
+    assert_eq!(
+        pool.winning_outcome,
+        Some(0u32),
+        "winning_outcome must be 0"
+    );
+}
+ 
+/// B6: winning_outcome == 1 settles correctly (boundary — highest valid).
+#[test]
+fn b6_settle_pool_winning_outcome_1_is_valid() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+ 
+    // Must not panic
+    t.client.settle_pool(&t.admin, &pool_id, &1u32);
+ 
+    let pool = t.client.get_pool(&pool_id).expect("pool must exist");
+    assert!(pool.settled, "pool must be marked settled");
+    assert_eq!(
+        pool.winning_outcome,
+        Some(1u32),
+        "winning_outcome must be 1"
+    );
+}
+ 
 }
