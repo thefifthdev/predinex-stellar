@@ -20,6 +20,9 @@ interface BettingSectionProps {
 
 export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSectionProps) {
     const { isConnected, address, connect } = useWallet();
+    const { userData, authenticate } = useStacks();
+    const { isConnected, address } = useWalletConnection();
+    const { isMismatch, expectedNetworkName, switchNetwork } = useNetworkMismatch();
     const { showToast } = useToast();
     const [betAmount, setBetAmount] = useState("");
     const [isBetting, setIsBetting] = useState(false);
@@ -138,6 +141,22 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
                     <p className="text-sm text-yellow-600">
                         Insufficient balance to place bets. Minimum: {MIN_BET_STX} STX
                     </p>
+                </div>
+            )}
+
+            {/* Network Mismatch Warning */}
+            {isConnected && isMismatch && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex flex-col gap-2">
+                    <div className="flex gap-2 text-red-500">
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                        <p className="text-sm font-medium">Wrong Network: Please switch to {expectedNetworkName} to place bets.</p>
+                    </div>
+                    <button 
+                        onClick={() => switchNetwork()}
+                        className="text-xs font-bold text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-colors self-start"
+                    >
+                        Switch to {expectedNetworkName}
+                    </button>
                 </div>
             )}
 
