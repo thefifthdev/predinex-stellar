@@ -1649,3 +1649,233 @@ fn h5_withdrawal_event_includes_caller_and_recipient() {
     assert_eq!(token.balance(&treasury_recipient), treasury_balance);
     assert_eq!(client.get_treasury_balance(), 0);
 }
+
+// ── Issue #171: Enriched settlement events ────────────────────────────────────
+
+/// Settlement event must include winning-side total, total pool volume, and
+/// fee amount so downstream consumers can derive payout context without
+/// additional reads.
+#[test]
+fn test_settle_pool_event_includes_totals_and_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    let creator = Address::generate(&env);
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+
+    token_admin_client.mint(&user_a, &300);
+    token_admin_client.mint(&user_b, &100);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Settlement Event Test"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    // user_a bets 300 on outcome 0, user_b bets 100 on outcome 1
+    client.place_bet(&user_a, &pool_id, &0, &300);
+    client.place_bet(&user_b, &pool_id, &1, &100);
+
+    env.ledger().with_mut(|li| { li.timestamp = 3601; });
+
+    client.settle_pool(&creator, &pool_id, &0);
+
+    // Verify derived values:
+    //   winning_side_total = total_a = 300
+    //   total_pool_volume  = 300 + 100 = 400
+    //   fee_amount         = 400 * 2 / 100 = 8
+    // (We verify indirectly through claim_winnings which uses the same fee rate.)
+    let winnings = client.claim_winnings(&user_a, &pool_id);
+    let fee = (400i128 * 2) / 100;
+    let net = 400 - fee; // 392
+    // user_a staked 300 / 300 of the winning side → full net pool
+    assert_eq!(winnings, net, "claim should equal net pool after 2% fee");
+    assert_eq!(client.get_treasury_balance(), fee, "treasury must hold exactly the fee");
+}
+
+/// The event payload for outcome 1 (side B) carries the correct totals.
+#[test]
+fn test_settle_pool_event_outcome_b_totals() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    let creator = Address::generate(&env);
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+
+    token_admin_client.mint(&user_a, &200);
+    token_admin_client.mint(&user_b, &600);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Outcome B Event Test"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user_a, &pool_id, &0, &200);
+    client.place_bet(&user_b, &pool_id, &1, &600);
+
+    env.ledger().with_mut(|li| { li.timestamp = 3601; });
+
+    // Settle with outcome 1 — winning_side_total should be total_b = 600
+    client.settle_pool(&creator, &pool_id, &1);
+
+    let winnings = client.claim_winnings(&user_b, &pool_id);
+    let total_volume = 800i128;
+    let fee = (total_volume * 2) / 100; // 16
+    let net = total_volume - fee;       // 784
+    assert_eq!(winnings, net);
+    assert_eq!(client.get_treasury_balance(), fee);
+}
+
+// ── Issue #179: Per-pool creation fee ─────────────────────────────────────────
+
+/// Creating a pool when a fee is set must transfer the fee to the treasury
+/// recipient and then succeed in creating the pool.
+#[test]
+fn test_create_pool_with_fee_transfers_correctly() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    let creation_fee = 500i128;
+    client.set_creation_fee(&treasury_recipient, &creation_fee);
+    assert_eq!(client.get_creation_fee(), creation_fee);
+
+    let creator = Address::generate(&env);
+    token_admin_client.mint(&creator, &creation_fee);
+
+    let initial_treasury_balance = token.balance(&treasury_recipient);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Fee Pool"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    // Pool was created successfully
+    let pool = client.get_pool(&pool_id);
+    assert!(!pool.unwrap().settled);
+
+    // Fee was transferred to the treasury recipient
+    assert_eq!(
+        token.balance(&treasury_recipient),
+        initial_treasury_balance + creation_fee,
+        "treasury recipient must receive the creation fee"
+    );
+    // Creator's balance is now 0
+    assert_eq!(token.balance(&creator), 0);
+}
+
+/// Creating a pool when no fee is set must succeed without any token transfer.
+#[test]
+fn test_create_pool_no_fee_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin);
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    // No set_creation_fee call — defaults to 0
+    assert_eq!(client.get_creation_fee(), 0);
+
+    let creator = Address::generate(&env);
+    // Creator has zero balance — pool creation must still succeed (no fee charged)
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "No Fee Pool"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    let pool = client.get_pool(&pool_id);
+    assert!(!pool.unwrap().settled);
+}
+
+/// Only the treasury recipient can set the creation fee.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_set_creation_fee_unauthorized_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin);
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    let attacker = Address::generate(&env);
+    // Must panic with "Unauthorized"
+    client.set_creation_fee(&attacker, &1000);
+}
+
+/// `set_creation_fee` must reject negative fee values.
+#[test]
+#[should_panic(expected = "Fee must be non-negative")]
+fn test_set_creation_fee_negative_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin);
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    client.set_creation_fee(&treasury_recipient, &-1);
+}

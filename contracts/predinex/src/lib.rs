@@ -14,6 +14,9 @@ pub enum DataKey {
     TreasuryRecipient,
     DelegatedSettler(u32),
     FreezeAdmin,
+    /// #179 — per-pool creation fee in stroops. Set by the admin via
+    /// `set_creation_fee`; defaults to 0 (no fee) when absent.
+    CreationFee,
 }
 
 /// Explicit lifecycle status for a prediction pool.
@@ -108,6 +111,34 @@ impl PredinexContract {
         env.storage().persistent().set(&DataKey::Treasury, &0i128);
     }
 
+    /// #179 — Set the per-pool creation fee (in stroops). Only the treasury
+    /// recipient may call this so the admin key is the same as the withdrawal
+    /// destination, keeping the permission model simple.
+    /// Pass 0 to remove the fee requirement.
+    pub fn set_creation_fee(env: Env, caller: Address, fee: i128) {
+        caller.require_auth();
+        let treasury_recipient: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TreasuryRecipient)
+            .expect("Not initialized");
+        if caller != treasury_recipient {
+            panic!("Unauthorized");
+        }
+        if fee < 0 {
+            panic!("Fee must be non-negative");
+        }
+        env.storage().persistent().set(&DataKey::CreationFee, &fee);
+    }
+
+    /// #179 — Return the current creation fee in stroops (0 if not set).
+    pub fn get_creation_fee(env: Env) -> i128 {
+        env.storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::CreationFee)
+            .unwrap_or(0)
+    }
+
     /// Normalize a Soroban `String` to a comparable form by converting to
     /// lowercase bytes and stripping leading/trailing ASCII spaces.
     /// Uses a fixed 64-byte stack buffer — outcome labels longer than 64 bytes
@@ -156,6 +187,30 @@ impl PredinexContract {
         // Reject duplicate outcome labels (case-insensitive, whitespace-trimmed)
         if Self::normalize_outcome(&env, &outcome_a) == Self::normalize_outcome(&env, &outcome_b) {
             panic!("Duplicate outcome labels");
+        }
+
+        // #179 — collect creation fee before writing any state so a rejection
+        // leaves the contract untouched.
+        let creation_fee: i128 = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::CreationFee)
+            .unwrap_or(0);
+
+        if creation_fee > 0 {
+            let token_address: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Token)
+                .expect("Not initialized");
+            let token_client = token::Client::new(&env, &token_address);
+            let treasury_recipient: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::TreasuryRecipient)
+                .expect("Not initialized");
+            // Transfer fee from creator to treasury recipient directly.
+            token_client.transfer(&creator, &treasury_recipient, &creation_fee);
         }
 
         let pool_id = Self::get_pool_counter(&env);
@@ -345,13 +400,22 @@ impl PredinexContract {
         pool.settled = true;
         pool.winning_outcome = Some(winning_outcome);
 
+        // #171 — compute totals for the enriched settlement event so downstream
+        // consumers (indexer, frontend) can derive payout context without extra reads.
+        let winning_side_total = if winning_outcome == 0 { pool.total_a } else { pool.total_b };
+        let total_pool_volume = pool.total_a + pool.total_b;
+        // Fee basis mirrors claim_winnings: 2 % of total volume.
+        let fee_amount = (total_pool_volume * 2) / 100;
+
         env.storage()
             .persistent()
             .set(&DataKey::Pool(pool_id), &pool);
 
+        // Enriched settlement event: (caller, winning_outcome, winning_side_total,
+        //   total_pool_volume, fee_amount)
         env.events().publish(
             (Symbol::new(&env, "settle_pool"), pool_id),
-            (caller, winning_outcome),
+            (caller, winning_outcome, winning_side_total, total_pool_volume, fee_amount),
         );
     }
 

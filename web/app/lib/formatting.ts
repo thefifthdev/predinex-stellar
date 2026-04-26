@@ -4,72 +4,76 @@
  */
 
 // =============================================================================
-// Currency Formatting
+// Currency Formatting (#202 — Stellar/XLM chain; 1 XLM = 10_000_000 stroops)
 // =============================================================================
 
-const MICROSTX_PER_STX = 1_000_000;
+/** Stroops per XLM — the Stellar base unit. */
+const STROOPS_PER_XLM = 10_000_000;
+
 
 /**
- * Convert STX amount to microSTX (multiply by 1,000,000)
- * @param stxAmount Amount in STX
- * @returns Amount in microSTX
+ * Convert XLM to stroops (multiply by 10,000,000).
  */
-export function stxToMicroStx(stxAmount: number): number {
-  return Math.floor(stxAmount * MICROSTX_PER_STX);
+export function xlmToStroops(xlmAmount: number): number {
+  return Math.floor(xlmAmount * STROOPS_PER_XLM);
 }
 
-/**
- * Convert microSTX to STX (divide by 1,000,000)
- * @param microStxAmount Amount in microSTX
- * @returns Amount in STX
- */
-export function microStxToStx(microStxAmount: number): number {
-  return microStxAmount / MICROSTX_PER_STX;
-}
+/** @deprecated Use `xlmToStroops`. */
+export const stxToMicroStx = xlmToStroops;
 
 /**
- * Format a microSTX amount for display with proper decimal places.
- * Uses 2-6 decimal places based on value size.
- * @param microStxAmount Amount in microSTX
- * @returns Formatted string (e.g., "1,250.00 STX" or "0.000001 STX")
+ * Convert stroops to XLM (divide by 10,000,000).
  */
-export function formatStxAmount(microStxAmount: number): string {
-  const stxAmount = microStxToStx(microStxAmount);
-  return stxAmount.toLocaleString('en-US', {
+export function stroopsToXlm(stroops: number): number {
+  return stroops / STROOPS_PER_XLM;
+}
+
+/** @deprecated Use `stroopsToXlm`. */
+export const microStxToStx = stroopsToXlm;
+
+/**
+ * Format a stroops amount for display with proper decimal places.
+ * Uses 2–7 decimal places based on value size.
+ */
+export function formatXlmAmount(stroops: number): string {
+  const xlm = stroopsToXlm(stroops);
+  return xlm.toLocaleString('en-US', {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  }) + ' STX';
+    maximumFractionDigits: 7,
+  }) + ' XLM';
 }
 
+/** @deprecated Use `formatXlmAmount`. */
+export const formatStxAmount = formatXlmAmount;
+
 /**
- * Format a microSTX amount with compact notation (K, M suffixes).
- * Best for displaying large values in constrained spaces.
- * @param microStxAmount Amount in microSTX
- * @returns Formatted string (e.g., "1.5M STX", "250K STX")
+ * Format a stroops amount with compact notation (K, M suffixes).
  */
-export function formatStxAmountCompact(microStxAmount: number): string {
-  const amount = microStxToStx(microStxAmount);
-  
+export function formatXlmAmountCompact(stroops: number): string {
+  const amount = stroopsToXlm(stroops);
   if (amount >= 1_000_000) {
-    return `${(amount / 1_000_000).toFixed(1)}M STX`;
+    return `${(amount / 1_000_000).toFixed(1)}M XLM`;
   } else if (amount >= 1_000) {
-    return `${(amount / 1_000).toFixed(1)}K STX`;
+    return `${(amount / 1_000).toFixed(1)}K XLM`;
   } else if (amount >= 1) {
-    return `${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} STX`;
+    return `${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} XLM`;
   } else {
-    return `${amount.toLocaleString('en-US', { maximumFractionDigits: 6 })} STX`;
+    return `${amount.toLocaleString('en-US', { maximumFractionDigits: 7 })} XLM`;
   }
 }
 
+/** @deprecated Use `formatXlmAmountCompact`. */
+export const formatStxAmountCompact = formatXlmAmountCompact;
+
 /**
- * Format a raw microSTX value without STX suffix.
- * Used when the currency is implied by context.
- * @param microStxAmount Amount in microSTX
- * @returns Formatted number string (e.g., "1,250.00")
+ * Format a raw stroops value without asset suffix.
  */
-export function formatMicroStxValue(microStxAmount: number): string {
-  return microStxToStx(microStxAmount).toFixed(2);
+export function formatStroopsValue(stroops: number): string {
+  return stroopsToXlm(stroops).toFixed(2);
 }
+
+/** @deprecated Use `formatStroopsValue`. */
+export const formatMicroStxValue = formatStroopsValue;
 
 // =============================================================================
 // Percentage Formatting
