@@ -13,16 +13,20 @@ pub enum DataKey {
     Treasury,
     TreasuryRecipient,
     DelegatedSettler(u32),
+    FreezeAdmin,
 }
 
 /// Explicit lifecycle status for a prediction pool.
 ///
 /// Transitions:
 ///   Open  ──(expiry reached + settle_pool called)──►  Settled(winning_outcome)
+///   Open  ──(freeze_pool called)──►  Frozen
+///   Settled  ──(dispute_pool called)──►  Disputed
+///   Frozen/Disputed  ──(unfreeze_pool called)──►  Active
 ///
 /// Future terminal states (Cancelled, Voided, Paused) can be added here
 /// without ambiguity, because status is the single source of truth.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 #[contracttype]
 pub enum PoolStatus {
     /// Accepting bets; expiry has not yet passed.
@@ -30,6 +34,12 @@ pub enum PoolStatus {
     /// Betting closed and a winning outcome has been declared.
     /// The inner value is the winning outcome index (0 or 1).
     Settled(u32),
+    /// Pool is operational and can accept bets or claims.
+    Active,
+    /// Pool is temporarily frozen, blocking bets and claims.
+    Frozen,
+    /// Pool settlement is disputed, blocking claims pending review.
+    Disputed,
 }
 
 #[derive(Clone)]
@@ -166,7 +176,7 @@ impl PredinexContract {
             winning_outcome: None,
             created_at,
             expiry,
-            status: PoolStatus::Active,
+            status: PoolStatus::Open,
         };
 
         env.storage()
@@ -196,11 +206,7 @@ impl PredinexContract {
             .expect("Pool not found");
 
         if pool.status != PoolStatus::Open {
-            panic!("Pool already settled");
-        }
-
-        if pool.status != PoolStatus::Active {
-            panic!("Pool is not active");
+            panic!("Pool not open for betting");
         }
 
         if env.ledger().timestamp() >= pool.expiry {
@@ -336,6 +342,8 @@ impl PredinexContract {
         }
 
         pool.status = PoolStatus::Settled(winning_outcome);
+        pool.settled = true;
+        pool.winning_outcome = Some(winning_outcome);
 
         env.storage()
             .persistent()
@@ -358,12 +366,10 @@ impl PredinexContract {
 
         let winning_outcome = match pool.status {
             PoolStatus::Settled(outcome) => outcome,
+            PoolStatus::Frozen => panic!("Pool is frozen; claims are blocked"),
+            PoolStatus::Disputed => panic!("Pool is disputed; claims are blocked"),
             _ => panic!("Pool not settled"),
         };
-
-        if pool.status != PoolStatus::Active {
-            panic!("Pool is frozen or disputed; claims are blocked");
-        }
 
         let user_bet = env
             .storage()
@@ -437,6 +443,39 @@ impl PredinexContract {
         env.storage().persistent().get(&DataKey::TreasuryRecipient)
     }
 
+    /// Rotate the treasury recipient address. Only callable by the current treasury recipient.
+    /// Emits an event with both old and new addresses for audit trail.
+    ///
+    /// # Arguments
+    /// * `caller` - Must be the current treasury recipient
+    /// * `new_recipient` - The new treasury recipient address
+    ///
+    /// # Panics
+    /// * If caller is not the current treasury recipient
+    /// * If treasury recipient is not set
+    pub fn rotate_treasury_recipient(env: Env, caller: Address, new_recipient: Address) {
+        caller.require_auth();
+
+        let current_recipient: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TreasuryRecipient)
+            .expect("Treasury recipient not set");
+
+        if caller != current_recipient {
+            panic!("Unauthorized");
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::TreasuryRecipient, &new_recipient);
+
+        env.events().publish(
+            (Symbol::new(&env, "treasury_recipient_rotated"),),
+            (current_recipient, new_recipient),
+        );
+    }
+
     pub fn withdraw_treasury(env: Env, caller: Address, amount: i128) {
         caller.require_auth();
 
@@ -477,9 +516,10 @@ impl PredinexContract {
             .persistent()
             .set(&DataKey::Treasury, &(current_treasury - amount));
 
+        // Emit explicit treasury withdrawal event with caller, recipient, and amount
         env.events().publish(
-            (Symbol::new(&env, "treasury_withdrawal"), treasury_recipient),
-            amount,
+            (Symbol::new(&env, "treasury_withdrawn"),),
+            (caller.clone(), treasury_recipient, amount),
         );
     }
 
