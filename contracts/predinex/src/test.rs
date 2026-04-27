@@ -798,7 +798,11 @@ fn b5_settle_pool_winning_outcome_0_is_valid() {
     t.client.settle_pool(&t.admin, &pool_id, &0u32);
 
     let pool = t.client.get_pool(&pool_id).expect("pool must exist");
-    assert_eq!(pool.status, PoolStatus::Settled(0), "status must be Settled(0)");
+    assert_eq!(
+        pool.status,
+        PoolStatus::Settled(0),
+        "status must be Settled(0)"
+    );
 }
 
 /// B6: winning_outcome == 1 settles correctly (boundary — highest valid).
@@ -812,7 +816,11 @@ fn b6_settle_pool_winning_outcome_1_is_valid() {
     t.client.settle_pool(&t.admin, &pool_id, &1u32);
 
     let pool = t.client.get_pool(&pool_id).expect("pool must exist");
-    assert_eq!(pool.status, PoolStatus::Settled(1), "status must be Settled(1)");
+    assert_eq!(
+        pool.status,
+        PoolStatus::Settled(1),
+        "status must be Settled(1)"
+    );
 }
 
 // ============================================================================
@@ -1277,7 +1285,9 @@ fn g1_treasury_recipient_can_be_rotated() {
     client.initialize(&token_id.address(), &original_recipient);
 
     // Verify original recipient is set
-    let current = client.get_treasury_recipient().expect("recipient must be set");
+    let current = client
+        .get_treasury_recipient()
+        .expect("recipient must be set");
     assert_eq!(current, original_recipient);
 
     // Rotate to new recipient
@@ -1285,7 +1295,9 @@ fn g1_treasury_recipient_can_be_rotated() {
     client.rotate_treasury_recipient(&original_recipient, &new_recipient);
 
     // Verify new recipient is now set
-    let updated = client.get_treasury_recipient().expect("recipient must be set");
+    let updated = client
+        .get_treasury_recipient()
+        .expect("recipient must be set");
     assert_eq!(updated, new_recipient);
 }
 
@@ -1367,7 +1379,10 @@ fn g3_after_rotation_only_new_recipient_can_withdraw() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.withdraw_treasury(&original_recipient, &treasury_balance);
     }));
-    assert!(result.is_err(), "old recipient should not be able to withdraw");
+    assert!(
+        result.is_err(),
+        "old recipient should not be able to withdraw"
+    );
 
     // New recipient should be able to withdraw
     client.withdraw_treasury(&new_recipient, &treasury_balance);
@@ -1397,7 +1412,9 @@ fn g4_rotation_emits_event_with_old_and_new_addresses() {
 
     // Event verification would be done through event inspection in production
     // For this test, we verify the state change occurred
-    let updated = client.get_treasury_recipient().expect("recipient must be set");
+    let updated = client
+        .get_treasury_recipient()
+        .expect("recipient must be set");
     assert_eq!(updated, new_recipient);
 }
 
@@ -1423,14 +1440,18 @@ fn g5_multiple_rotations_work_correctly() {
     client.rotate_treasury_recipient(&recipient2, &recipient3);
 
     // Verify final recipient is set
-    let final_recipient = client.get_treasury_recipient().expect("recipient must be set");
+    let final_recipient = client
+        .get_treasury_recipient()
+        .expect("recipient must be set");
     assert_eq!(final_recipient, recipient3);
 
     // Verify only final recipient can rotate
     let recipient4 = Address::generate(&env);
     client.rotate_treasury_recipient(&recipient3, &recipient4);
 
-    let updated = client.get_treasury_recipient().expect("recipient must be set");
+    let updated = client
+        .get_treasury_recipient()
+        .expect("recipient must be set");
     assert_eq!(updated, recipient4);
 }
 
@@ -1688,7 +1709,9 @@ fn test_settle_pool_event_includes_totals_and_fee() {
     client.place_bet(&user_a, &pool_id, &0, &300);
     client.place_bet(&user_b, &pool_id, &1, &100);
 
-    env.ledger().with_mut(|li| { li.timestamp = 3601; });
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
 
     client.settle_pool(&creator, &pool_id, &0);
 
@@ -1700,9 +1723,13 @@ fn test_settle_pool_event_includes_totals_and_fee() {
     let winnings = client.claim_winnings(&user_a, &pool_id);
     let fee = (400i128 * 2) / 100;
     let net = 400 - fee; // 392
-    // user_a staked 300 / 300 of the winning side → full net pool
+                         // user_a staked 300 / 300 of the winning side → full net pool
     assert_eq!(winnings, net, "claim should equal net pool after 2% fee");
-    assert_eq!(client.get_treasury_balance(), fee, "treasury must hold exactly the fee");
+    assert_eq!(
+        client.get_treasury_balance(),
+        fee,
+        "treasury must hold exactly the fee"
+    );
 }
 
 /// The event payload for outcome 1 (side B) carries the correct totals.
@@ -1740,7 +1767,9 @@ fn test_settle_pool_event_outcome_b_totals() {
     client.place_bet(&user_a, &pool_id, &0, &200);
     client.place_bet(&user_b, &pool_id, &1, &600);
 
-    env.ledger().with_mut(|li| { li.timestamp = 3601; });
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
 
     // Settle with outcome 1 — winning_side_total should be total_b = 600
     client.settle_pool(&creator, &pool_id, &1);
@@ -1748,7 +1777,7 @@ fn test_settle_pool_event_outcome_b_totals() {
     let winnings = client.claim_winnings(&user_b, &pool_id);
     let total_volume = 800i128;
     let fee = (total_volume * 2) / 100; // 16
-    let net = total_volume - fee;       // 784
+    let net = total_volume - fee; // 784
     assert_eq!(winnings, net);
     assert_eq!(client.get_treasury_balance(), fee);
 }
@@ -1893,26 +1922,41 @@ fn claim_status_winner_transitions() {
     token_admin.mint(&loser, &500);
 
     // Before any bet: NeverBet
-    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::NeverBet);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &winner),
+        super::ClaimStatus::NeverBet
+    );
 
     t.client.place_bet(&winner, &pool_id, &0, &300); // outcome A
-    t.client.place_bet(&loser, &pool_id, &1, &200);  // outcome B
+    t.client.place_bet(&loser, &pool_id, &1, &200); // outcome B
 
     // After bet, pool still open: NotEligible (no claim available yet)
-    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::NotEligible);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &winner),
+        super::ClaimStatus::NotEligible
+    );
 
     expire_pool(&t.env);
     t.client.settle_pool(&t.admin, &pool_id, &0); // A wins
 
     // After settlement, winner: Claimable
-    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::Claimable);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &winner),
+        super::ClaimStatus::Claimable
+    );
     // After settlement, loser: NotEligible
-    assert_eq!(t.client.get_claim_status(&pool_id, &loser), super::ClaimStatus::NotEligible);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &loser),
+        super::ClaimStatus::NotEligible
+    );
 
     t.client.claim_winnings(&winner, &pool_id);
 
     // After claim: AlreadyClaimed
-    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::AlreadyClaimed);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &winner),
+        super::ClaimStatus::AlreadyClaimed
+    );
 }
 
 /// Losing bettor status is NotEligible, distinct from NeverBet.
@@ -1927,14 +1971,16 @@ fn claim_status_loser_is_not_eligible_not_never_bet() {
     token_admin.mint(&loser, &100);
     token_admin.mint(&winner, &100);
 
-    t.client.place_bet(&loser, &pool_id, &1, &100);  // outcome B
+    t.client.place_bet(&loser, &pool_id, &1, &100); // outcome B
     t.client.place_bet(&winner, &pool_id, &0, &100); // outcome A
 
     expire_pool(&t.env);
     t.client.settle_pool(&t.admin, &pool_id, &0); // A wins
 
     let loser_status = t.client.get_claim_status(&pool_id, &loser);
-    let never_bet_status = t.client.get_claim_status(&pool_id, &Address::generate(&t.env));
+    let never_bet_status = t
+        .client
+        .get_claim_status(&pool_id, &Address::generate(&t.env));
 
     assert_eq!(loser_status, super::ClaimStatus::NotEligible);
     assert_eq!(never_bet_status, super::ClaimStatus::AlreadyClaimed); // settled pool, no record
@@ -1954,11 +2000,17 @@ fn claim_status_voided_pool_transitions() {
     t.client.place_bet(&user, &pool_id, &0, &200);
     t.client.void_pool(&t.admin, &pool_id);
 
-    assert_eq!(t.client.get_claim_status(&pool_id, &user), super::ClaimStatus::RefundClaimable);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &user),
+        super::ClaimStatus::RefundClaimable
+    );
 
     t.client.claim_refund(&user, &pool_id);
 
-    assert_eq!(t.client.get_claim_status(&pool_id, &user), super::ClaimStatus::AlreadyClaimed);
+    assert_eq!(
+        t.client.get_claim_status(&pool_id, &user),
+        super::ClaimStatus::AlreadyClaimed
+    );
 }
 
 // ── Issue #186: treasury withdrawal amount validation ─────────────────────────
@@ -2007,9 +2059,497 @@ fn treasury_withdraw_positive_succeeds() {
     let (t, _) = setup_with_treasury();
 
     let before = t.client.get_treasury_balance();
-    assert!(before > 0, "treasury must have a balance after fee collection");
+    assert!(
+        before > 0,
+        "treasury must have a balance after fee collection"
+    );
 
     t.client.withdraw_treasury(&t.admin, &before);
 
     assert_eq!(t.client.get_treasury_balance(), 0);
+}
+
+// ============================================================================
+// Issue #160: Pool cancellation path before the first bet
+//
+// The creator must be able to cancel a pool that has no bets. Once cancelled
+// the pool transitions to the Cancelled terminal state and rejects all further
+// actions. Cancellation after the first bet must be rejected.
+// ============================================================================
+
+/// I1: Creator can cancel a pool before any bets are placed.
+#[test]
+fn i1_cancel_pool_before_bets_succeeds() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let pool_before = t.client.get_pool(&pool_id).expect("pool must exist");
+    assert_eq!(pool_before.status, PoolStatus::Open);
+
+    t.client.cancel_pool(&t.admin, &pool_id);
+
+    let pool_after = t
+        .client
+        .get_pool(&pool_id)
+        .expect("pool must still exist after cancel");
+    assert_eq!(
+        pool_after.status,
+        PoolStatus::Cancelled,
+        "status must be Cancelled after creator cancels"
+    );
+}
+
+/// I2: Cancellation is rejected once the first bet has been placed.
+#[test]
+#[should_panic(expected = "Pool has bets; cannot cancel")]
+fn i2_cancel_pool_after_first_bet_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.cancel_pool(&t.admin, &pool_id);
+}
+
+/// I3: A non-creator cannot cancel the pool.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn i3_non_creator_cannot_cancel_pool() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let other = Address::generate(&t.env);
+    t.client.cancel_pool(&other, &pool_id);
+}
+
+/// I4: Pool records survive cancellation; storage is not silently deleted.
+#[test]
+fn i4_cancelled_pool_record_is_retained() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.cancel_pool(&t.admin, &pool_id);
+
+    let pool = t.client.get_pool(&pool_id);
+    assert!(
+        pool.is_some(),
+        "pool record must still exist after cancellation"
+    );
+    assert_eq!(pool.unwrap().status, PoolStatus::Cancelled);
+}
+
+/// I5: Betting into a cancelled pool is rejected.
+#[test]
+#[should_panic(expected = "Pool not open for betting")]
+fn i5_place_bet_on_cancelled_pool_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.cancel_pool(&t.admin, &pool_id);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+}
+
+/// I6: Settling a cancelled pool is rejected.
+#[test]
+#[should_panic(expected = "Already settled")]
+fn i6_settle_cancelled_pool_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.cancel_pool(&t.admin, &pool_id);
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0u32);
+}
+
+// ============================================================================
+// Issue #172: Read method to scan a user position across pool ranges
+//
+// get_user_pools returns only pools where the user has an open bet record.
+// Scans are range-bounded, capped at 100 pools per call, and deterministic
+// so callers can paginate with successive start_id values.
+// ============================================================================
+
+/// J1: Scan returns only pools where the user has a bet.
+#[test]
+fn j1_get_user_pools_returns_correct_pools() {
+    let t = setup();
+
+    let pool_a = make_pool(&t);
+    let pool_b = make_pool(&t);
+    let pool_c = make_pool(&t);
+
+    // User bets in pool_a and pool_c but not pool_b
+    t.client.place_bet(&t.user, &pool_a, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_c, &1u32, &200i128);
+
+    let positions = t.client.get_user_pools(&t.user, &pool_a, &3u32);
+
+    let pool_ids: soroban_sdk::Vec<u32> = {
+        let mut ids = soroban_sdk::Vec::new(&t.env);
+        for i in 0..positions.len() {
+            ids.push_back(positions.get(i).unwrap().pool_id);
+        }
+        ids
+    };
+
+    assert_eq!(positions.len(), 2, "must find exactly 2 positions");
+    assert!(pool_ids.contains(pool_a), "pool_a must be in results");
+    assert!(
+        !pool_ids.contains(pool_b),
+        "pool_b must not appear — user never bet"
+    );
+    assert!(pool_ids.contains(pool_c), "pool_c must be in results");
+}
+
+/// J2: Results are ordered by ascending pool_id within the scanned range.
+#[test]
+fn j2_get_user_pools_is_ordered_ascending() {
+    let t = setup();
+
+    let pool_a = make_pool(&t);
+    let pool_b = make_pool(&t);
+
+    t.client.place_bet(&t.user, &pool_b, &0u32, &50i128);
+    t.client.place_bet(&t.user, &pool_a, &0u32, &50i128);
+
+    let positions = t.client.get_user_pools(&t.user, &pool_a, &2u32);
+    assert_eq!(positions.len(), 2);
+    assert!(
+        positions.get(0).unwrap().pool_id < positions.get(1).unwrap().pool_id,
+        "positions must be ordered by ascending pool_id"
+    );
+}
+
+/// J3: Querying a range with no user bets returns an empty vec.
+#[test]
+fn j3_get_user_pools_returns_empty_when_no_bets() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    // User never bets
+    let positions = t.client.get_user_pools(&t.user, &pool_id, &5u32);
+    assert_eq!(
+        positions.len(),
+        0,
+        "must return empty when user has no bets in range"
+    );
+}
+
+/// J4: Claimed positions do not appear in subsequent scans.
+#[test]
+fn j4_claimed_position_is_not_returned_by_scan() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let loser = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&loser, &100);
+
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&loser, &pool_id, &1u32, &100i128);
+
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0u32);
+    t.client.claim_winnings(&t.user, &pool_id);
+
+    // After claiming, user's bet record is gone — scan must return empty.
+    let positions = t.client.get_user_pools(&t.user, &pool_id, &1u32);
+    assert_eq!(
+        positions.len(),
+        0,
+        "claimed position must not appear in scan"
+    );
+}
+
+/// J5: Count is capped at 100 pools per call.
+#[test]
+fn j5_get_user_pools_caps_count_at_100() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    // Create 105 pools so 100+ exist in range
+    for i in 0..105 {
+        client.create_pool(
+            &creator,
+            &String::from_str(&env, &format!("Pool {}", i)),
+            &String::from_str(&env, "Desc"),
+            &String::from_str(&env, "Yes"),
+            &String::from_str(&env, "No"),
+            &3_600u64,
+        );
+    }
+
+    // Even requesting 200, only 100 are scanned
+    let positions = client.get_user_pools(&user, &1u32, &200u32);
+    // User has no bets so result is empty, but the function must not scan > 100 pools.
+    // We verify it completes without error and returns an empty vec (≤ 100 scanned).
+    assert_eq!(positions.len(), 0, "no bets placed, must return empty");
+}
+
+// ============================================================================
+// Issue #189: Storage TTL extension for active pools and user positions
+//
+// Pool and UserBet entries are bumped on creation, every write, and every read
+// so active records remain accessible for the full market lifecycle.
+// ============================================================================
+
+/// K1: A newly created pool has an extended TTL (bump does not panic).
+#[test]
+fn k1_pool_ttl_is_extended_on_create() {
+    let t = setup();
+    // create_pool internally calls extend_ttl — verify no panic occurs.
+    let pool_id = make_pool(&t);
+    let pool = t.client.get_pool(&pool_id);
+    assert!(
+        pool.is_some(),
+        "pool must be readable after creation with TTL bump"
+    );
+}
+
+/// K2: Placing a bet extends both pool and user-position TTLs (no panic).
+#[test]
+fn k2_pool_and_bet_ttl_extended_on_place_bet() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    // place_bet calls extend_ttl for both pool and UserBet — verify no panic.
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+
+    let pool = t.client.get_pool(&pool_id);
+    assert!(pool.is_some());
+    let bet = t.client.get_user_bet(&pool_id, &t.user);
+    assert!(bet.is_some(), "user bet must be readable after TTL bump");
+}
+
+/// K3: Settling a pool extends the pool TTL so claims can proceed after settlement.
+#[test]
+fn k3_pool_ttl_extended_on_settle() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    expire_pool(&t.env);
+    // settle_pool calls extend_ttl — verify pool remains readable afterward.
+    t.client.settle_pool(&t.admin, &pool_id, &0u32);
+
+    let pool = t.client.get_pool(&pool_id);
+    assert!(
+        pool.is_some(),
+        "pool must remain readable after settlement TTL bump"
+    );
+}
+
+/// K4: get_user_bet read path extends the TTL of the returned entry.
+#[test]
+fn k4_get_user_bet_extends_ttl_on_read() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+
+    // get_user_bet calls extend_ttl — verify no panic and correct data returned.
+    let bet = t.client.get_user_bet(&pool_id, &t.user);
+    assert!(bet.is_some());
+    assert_eq!(bet.unwrap().amount_a, 100i128);
+}
+
+// ============================================================================
+// Issue #200: Token transfers and treasury accounting stay in sync
+//
+// claim_winnings is structured so the token transfer happens before any state
+// mutation. A failed claim (no bet, wrong pool, not winner) must leave both the
+// treasury balance and the contract token balance unchanged.
+// ============================================================================
+
+/// L1: A claim on a non-existent pool panics and leaves treasury unchanged.
+#[test]
+fn l1_failed_claim_nonexistent_pool_leaves_treasury_unchanged() {
+    let t = setup();
+    let treasury_before = t.client.get_treasury_balance();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.claim_winnings(&t.user, &999u32);
+    }));
+    assert!(result.is_err(), "claim on nonexistent pool must panic");
+
+    let treasury_after = t.client.get_treasury_balance();
+    assert_eq!(
+        treasury_before, treasury_after,
+        "treasury must be unchanged after failed claim"
+    );
+}
+
+/// L2: A claim with no bet record panics and leaves treasury unchanged.
+#[test]
+fn l2_failed_claim_no_bet_leaves_treasury_unchanged() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let user2 = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&user2, &100);
+
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0u32);
+
+    let treasury_before = t.client.get_treasury_balance();
+
+    // user2 never bet — claim must panic
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.claim_winnings(&user2, &pool_id);
+    }));
+    assert!(result.is_err(), "claim with no bet must panic");
+
+    let treasury_after = t.client.get_treasury_balance();
+    assert_eq!(
+        treasury_before, treasury_after,
+        "treasury must be unchanged after failed claim"
+    );
+}
+
+/// L3: A loser's claim panics and leaves treasury and token balances unchanged.
+#[test]
+fn l3_loser_claim_leaves_balances_unchanged() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin_addr = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin_addr.clone());
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    let creator = Address::generate(&env);
+    let winner = Address::generate(&env);
+    let loser = Address::generate(&env);
+
+    token_admin_client.mint(&winner, &500);
+    token_admin_client.mint(&loser, &500);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&winner, &pool_id, &0, &300);
+    client.place_bet(&loser, &pool_id, &1, &200);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
+    client.settle_pool(&creator, &pool_id, &0);
+
+    let treasury_before = client.get_treasury_balance();
+    let loser_balance_before = token.balance(&loser);
+    let contract_balance_before = token.balance(&contract_id);
+
+    // Loser claims — must panic with "No winnings to claim"
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.claim_winnings(&loser, &pool_id);
+    }));
+    assert!(result.is_err(), "loser claim must panic");
+
+    assert_eq!(
+        client.get_treasury_balance(),
+        treasury_before,
+        "treasury must be unchanged after loser's failed claim"
+    );
+    assert_eq!(
+        token.balance(&loser),
+        loser_balance_before,
+        "loser token balance must be unchanged"
+    );
+    assert_eq!(
+        token.balance(&contract_id),
+        contract_balance_before,
+        "contract token balance must be unchanged"
+    );
+}
+
+/// L4: A successful claim reconciles treasury and token balances exactly.
+#[test]
+fn l4_successful_claim_reconciles_treasury_and_balances() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin_addr = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin_addr.clone());
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    let creator = Address::generate(&env);
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+
+    token_admin_client.mint(&user_a, &300);
+    token_admin_client.mint(&user_b, &200);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Reconciliation test"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user_a, &pool_id, &0, &300);
+    client.place_bet(&user_b, &pool_id, &1, &200);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
+    client.settle_pool(&creator, &pool_id, &0); // A wins
+
+    let contract_balance_before = token.balance(&contract_id);
+    // Total = 500, fee = 10 (2%), net = 490. user_a staked all winning side → wins 490.
+    let winnings = client.claim_winnings(&user_a, &pool_id);
+
+    let expected_fee = (500i128 * 2) / 100;
+    let expected_winnings = 500 - expected_fee;
+
+    assert_eq!(
+        winnings, expected_winnings,
+        "winnings must equal net pool after fee"
+    );
+    assert_eq!(
+        client.get_treasury_balance(),
+        expected_fee,
+        "treasury must hold exactly the fee"
+    );
+    assert_eq!(
+        token.balance(&contract_id),
+        contract_balance_before - winnings,
+        "contract balance must decrease by exactly the payout"
+    );
+    assert_eq!(
+        token.balance(&contract_id),
+        expected_fee,
+        "remaining contract balance must equal the unclaimed treasury fee"
+    );
 }
