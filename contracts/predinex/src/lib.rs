@@ -852,6 +852,24 @@ impl PredinexContract {
             .unwrap_or(0)
     }
 
+    /// #164 — Return the amount currently withdrawable from the treasury.
+    ///
+    /// This is the single source of truth for withdrawal eligibility. The
+    /// frontend should call this method instead of reimplementing the
+    /// validation logic from `withdraw_treasury`. If future versions introduce
+    /// reserved balances or per-pool accounting rules, this method will be
+    /// updated in lockstep with `withdraw_treasury` so callers remain correct
+    /// without any off-chain changes.
+    ///
+    /// A withdrawal of any amount `a` where `0 < a <= get_withdrawable_treasury()`
+    /// is guaranteed to pass the balance check in `withdraw_treasury`.
+    pub fn get_withdrawable_treasury(env: Env) -> i128 {
+        env.storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::Treasury)
+            .unwrap_or(0)
+    }
+
     pub fn get_treasury_recipient(env: Env) -> Option<Address> {
         env.storage().persistent().get(&DataKey::TreasuryRecipient)
     }
