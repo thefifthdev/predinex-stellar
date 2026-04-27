@@ -5,6 +5,36 @@ mod test;
 mod protocol_fee_tests;
 mod pause_tests;
 
+// ── Issue #175: Event schema versioning ──────────────────────────────────────
+//
+// Every event emitted by this contract uses the same topic layout:
+//
+//   (Symbol(event_name), Symbol(EVENT_SCHEMA_VERSION), ...identifiers)
+//
+// Topic position 0 is the event name (e.g. `create_pool`). Topic position 1 is
+// always the schema version marker (currently `"v1"`). Subsequent topics carry
+// pool / user identifiers as before. Indexers and frontend consumers can
+// therefore pin a specific schema version with a positional topic filter, e.g.
+// `[["create_pool", "v1"]]`, and reject events whose version they do not yet
+// understand instead of silently mis-decoding payloads.
+//
+// Upgrade rules for future schema changes:
+//   * A backward-compatible payload extension (additional optional fields)
+//     SHOULD reuse the same version marker.
+//   * A breaking change to topics or data shape MUST bump the version marker
+//     (e.g. `"v2"`) and be documented in `web/docs/CONTRACT_EVENTS.md`.
+//   * The contract MUST never emit two version markers for the same event in
+//     the same release; consumers can rely on exactly one version per event.
+//
+// See `web/docs/CONTRACT_EVENTS.md` for the full per-event schema and the
+// upgrade expectations published to consumers.
+pub const EVENT_SCHEMA_VERSION: &str = "v1";
+
+/// Build the schema-version `Symbol` used as topic position 1 on every event.
+fn event_version(env: &Env) -> Symbol {
+    Symbol::new(env, EVENT_SCHEMA_VERSION)
+}
+
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
@@ -510,7 +540,12 @@ impl PredinexContract {
         );
 
         env.events().publish(
-            (Symbol::new(&env, "place_bet"), pool_id, user),
+            (
+                Symbol::new(&env, "place_bet"),
+                event_version(&env),
+                pool_id,
+                user,
+            ),
             BetEvent {
                 outcome,
                 amount,
@@ -554,8 +589,14 @@ impl PredinexContract {
             .persistent()
             .set(&DataKey::Pool(pool_id), &pool);
 
-        env.events()
-            .publish((Symbol::new(&env, "cancel_pool"), pool_id), creator);
+        env.events().publish(
+            (
+                Symbol::new(&env, "cancel_pool"),
+                event_version(&env),
+                pool_id,
+            ),
+            creator,
+        );
     }
 
     /// Assign a delegated settler for a pool. Only the pool creator can call this.
@@ -577,7 +618,11 @@ impl PredinexContract {
             .set(&DataKey::DelegatedSettler(pool_id), &settler);
 
         env.events().publish(
-            (Symbol::new(&env, "assign_settler"), pool_id),
+            (
+                Symbol::new(&env, "assign_settler"),
+                event_version(&env),
+                pool_id,
+            ),
             (creator, settler),
         );
     }
@@ -648,7 +693,11 @@ impl PredinexContract {
         );
 
         env.events().publish(
-            (Symbol::new(&env, "settle_pool"), pool_id),
+            (
+                Symbol::new(&env, "settle_pool"),
+                event_version(&env),
+                pool_id,
+            ),
             (
                 caller,
                 winning_outcome,
@@ -693,8 +742,10 @@ impl PredinexContract {
             POOL_BUMP_TARGET,
         );
 
-        env.events()
-            .publish((Symbol::new(&env, "void_pool"), pool_id), caller);
+        env.events().publish(
+            (Symbol::new(&env, "void_pool"), event_version(&env), pool_id),
+            caller,
+        );
     }
 
     /// Refund a user's original stake from a voided pool. No fee is taken.
@@ -736,8 +787,15 @@ impl PredinexContract {
             .persistent()
             .remove(&DataKey::UserBet(pool_id, user.clone()));
 
-        env.events()
-            .publish((Symbol::new(&env, "claim_refund"), pool_id, user), refund);
+        env.events().publish(
+            (
+                Symbol::new(&env, "claim_refund"),
+                event_version(&env),
+                pool_id,
+                user,
+            ),
+            refund,
+        );
 
         refund
     }
@@ -830,8 +888,6 @@ impl PredinexContract {
             .remove(&DataKey::UserBet(pool_id, user.clone()));
 
         // Step 5: emit events in final committed state.
-        env.events()
-            .publish((Symbol::new(&env, "fee_collected"), pool_id), fee);
         env.events().publish(
             (Symbol::new(&env, "claim_winnings"), pool_id, user),
             ClaimEvent {
@@ -894,7 +950,10 @@ impl PredinexContract {
             .set(&DataKey::TreasuryRecipient, &new_recipient);
 
         env.events().publish(
-            (Symbol::new(&env, "treasury_recipient_rotated"),),
+            (
+                Symbol::new(&env, "treasury_recipient_rotated"),
+                event_version(&env),
+            ),
             (current_recipient, new_recipient),
         );
     }
@@ -944,7 +1003,7 @@ impl PredinexContract {
             .set(&DataKey::Treasury, &(current_treasury - amount));
 
         env.events().publish(
-            (Symbol::new(&env, "treasury_withdrawn"),),
+            (Symbol::new(&env, "treasury_withdrawn"), event_version(&env)),
             (caller.clone(), treasury_recipient, amount),
         );
     }
@@ -967,8 +1026,10 @@ impl PredinexContract {
             .persistent()
             .set(&DataKey::FreezeAdmin, &freeze_admin);
 
-        env.events()
-            .publish((Symbol::new(&env, "freeze_admin_set"),), freeze_admin);
+        env.events().publish(
+            (Symbol::new(&env, "freeze_admin_set"), event_version(&env)),
+            freeze_admin,
+        );
     }
 
     /// Freeze a pool, blocking new bets and claim payouts.
@@ -997,8 +1058,14 @@ impl PredinexContract {
             POOL_BUMP_TARGET,
         );
 
-        env.events()
-            .publish((Symbol::new(&env, "pool_frozen"), pool_id), caller);
+        env.events().publish(
+            (
+                Symbol::new(&env, "pool_frozen"),
+                event_version(&env),
+                pool_id,
+            ),
+            caller,
+        );
     }
 
     /// Mark a settled pool as disputed, blocking claim payouts pending review.
@@ -1031,8 +1098,14 @@ impl PredinexContract {
             POOL_BUMP_TARGET,
         );
 
-        env.events()
-            .publish((Symbol::new(&env, "pool_disputed"), pool_id), caller);
+        env.events().publish(
+            (
+                Symbol::new(&env, "pool_disputed"),
+                event_version(&env),
+                pool_id,
+            ),
+            caller,
+        );
     }
 
     /// Unfreeze a frozen or disputed pool, restoring it to Open status.
@@ -1061,8 +1134,14 @@ impl PredinexContract {
             POOL_BUMP_TARGET,
         );
 
-        env.events()
-            .publish((Symbol::new(&env, "pool_unfrozen"), pool_id), caller);
+        env.events().publish(
+            (
+                Symbol::new(&env, "pool_unfrozen"),
+                event_version(&env),
+                pool_id,
+            ),
+            caller,
+        );
     }
 
     /// Return pool data and extend its TTL on every read so active pools stay

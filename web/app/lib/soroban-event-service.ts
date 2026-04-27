@@ -5,9 +5,26 @@
  * into typed ActivityItem objects consumed by the UI.
  *
  * Event schema reference: web/docs/CONTRACT_EVENTS.md
+ *
+ * Schema versioning (issue #175): every event emitted by the Predinex
+ * contract carries a `Symbol` schema version at topic position 1 (currently
+ * `"v1"`). This decoder pins to the version it was built against and skips
+ * events with any other version rather than silently mis-decoding them.
+ * See `SUPPORTED_EVENT_SCHEMA_VERSION` below.
  */
 
 import type { ActivityItem } from './adapters/types';
+
+// ---------------------------------------------------------------------------
+// Event schema version (issue #175)
+// ---------------------------------------------------------------------------
+
+/**
+ * The contract event schema version this decoder understands. Must match the
+ * `EVENT_SCHEMA_VERSION` constant in `contracts/predinex/src/lib.rs`. Update
+ * both in lockstep when the contract bumps its version marker.
+ */
+export const SUPPORTED_EVENT_SCHEMA_VERSION = 'v1';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -65,6 +82,8 @@ export type SorobanEventName =
 
 export interface DecodedSorobanEvent {
   name: SorobanEventName;
+  /** Schema version of the event payload (issue #175). */
+  schemaVersion?: string;
   poolId?: number;
   user?: string;
   /** Raw token units (i128 stored as number for JS compat) */
@@ -120,7 +139,11 @@ function toString(raw: unknown): string | undefined {
 
 /**
  * Decode a raw Soroban event into a typed DecodedSorobanEvent.
- * Returns null if the event name is unrecognised or topics are malformed.
+ *
+ * Returns `null` if the event name is unrecognised, topics are malformed, or
+ * the schema version at topic position 1 does not match
+ * `SUPPORTED_EVENT_SCHEMA_VERSION`. Skipped events are logged so operators
+ * can detect a contract upgrade that the frontend has not caught up with.
  */
 export function decodeSorobanEvent(raw: RawSorobanEvent): DecodedSorobanEvent | null {
   const topics = raw.topic ?? [];
@@ -129,25 +152,41 @@ export function decodeSorobanEvent(raw: RawSorobanEvent): DecodedSorobanEvent | 
   const name = toString(topics[0]) as SorobanEventName | undefined;
   if (!name) return null;
 
+  // Issue #175: pin to a known schema version. Contract emits the version
+  // `Symbol` at topic position 1. An older or newer marker means the payload
+  // shape may have changed — refuse to decode rather than mis-decode.
+  const schemaVersion = toString(topics[1]);
+  if (schemaVersion !== SUPPORTED_EVENT_SCHEMA_VERSION) {
+    console.warn(
+      `[soroban-event-service] Skipping ${name} event with unsupported schema version "${schemaVersion ?? 'missing'}" (decoder pinned to "${SUPPORTED_EVENT_SCHEMA_VERSION}")`
+    );
+    return null;
+  }
+
   const txHash = raw.txHash ?? raw.id ?? '';
   const timestamp = raw.ledgerClosedAt
     ? Math.floor(new Date(raw.ledgerClosedAt).getTime() / 1000)
     : Math.floor(Date.now() / 1000);
 
-  const base: DecodedSorobanEvent = { name, txHash, timestamp, ledger: raw.ledger };
+  const base: DecodedSorobanEvent = {
+    name,
+    txHash,
+    timestamp,
+    ledger: raw.ledger,
+    schemaVersion,
+  };
 
   switch (name) {
     case 'create_pool': {
-      // topics: [name, pool_id], data: creator
-      base.poolId = toNumber(topics[1]);
+      // topics: [name, version, pool_id], data: (creator, status)
+      base.poolId = toNumber(topics[2]);
       return base;
     }
 
     case 'place_bet': {
-      // topics: [name, pool_id, user], data: (outcome, amount)
-      base.poolId = toNumber(topics[1]);
-      base.user = toString(topics[2]);
-      // data is a tuple [outcome, amount]
+      // topics: [name, version, pool_id, user], data: BetEvent struct
+      base.poolId = toNumber(topics[2]);
+      base.user = toString(topics[3]);
       const data = raw.value;
       if (Array.isArray(data)) {
         const outcome = toNumber(data[0]);
@@ -163,17 +202,24 @@ export function decodeSorobanEvent(raw: RawSorobanEvent): DecodedSorobanEvent | 
     }
 
     case 'settle_pool': {
-      // topics: [name, pool_id], data: winning_outcome
-      base.poolId = toNumber(topics[1]);
-      const wo = toNumber(raw.value);
+      // topics: [name, version, pool_id], data: tuple including winning_outcome
+      base.poolId = toNumber(topics[2]);
+      const data = raw.value;
+      let wo: number | undefined;
+      if (Array.isArray(data)) {
+        // (caller, winning_outcome, winning_side_total, total_pool_volume, fee_amount)
+        wo = toNumber(data[1]);
+      } else {
+        wo = toNumber(data);
+      }
       base.winningOutcome = (wo === 0 || wo === 1) ? wo : undefined;
       return base;
     }
 
     case 'claim_winnings': {
-      // topics: [name, pool_id, user], data: winnings
-      base.poolId = toNumber(topics[1]);
-      base.user = toString(topics[2]);
+      // topics: [name, version, pool_id, user], data: winnings
+      base.poolId = toNumber(topics[2]);
+      base.user = toString(topics[3]);
       base.winnings = toNumber(raw.value);
       return base;
     }
@@ -299,7 +345,9 @@ export async function getUserActivityFromSoroban(
   if (!rpcUrl || !explorerUrl || !contractId) return [];
 
   try {
-    // Use getEvents RPC method — filter by contract, user-relevant event names
+    // Use getEvents RPC method — filter by contract, user-relevant event names,
+    // and the supported schema version so a future contract version cannot
+    // silently feed mis-shaped events into this decoder (issue #175).
     const body = {
       jsonrpc: '2.0',
       id: 1,
@@ -309,10 +357,11 @@ export async function getUserActivityFromSoroban(
           {
             type: 'contract',
             contractIds: [contractId],
-            // Filter for events where the user address appears in topics
-            // (place_bet and claim_winnings include user in topic[2])
+            // topics[0] = event name, topics[1] = schema version. The third
+            // and later positions (pool_id, user) are accepted on any value.
             topics: [
               ['place_bet', 'claim_winnings', 'create_pool', 'settle_pool'],
+              [SUPPORTED_EVENT_SCHEMA_VERSION],
             ],
           },
         ],
