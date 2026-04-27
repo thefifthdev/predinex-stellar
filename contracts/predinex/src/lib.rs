@@ -32,6 +32,10 @@ const LEDGERS_PER_DAY: u32 = 17_280;
 const POOL_BUMP_TARGET: u32 = LEDGERS_PER_DAY * 30; // extend to 30 days
 const POOL_BUMP_THRESHOLD: u32 = LEDGERS_PER_DAY * 25; // trigger bump when < 25 days remain
 
+/// Maximum pool duration accepted by the contract. This protects against
+/// arbitrarily long-lived markets that increase storage rent exposure.
+const MAX_POOL_DURATION: u64 = 1_000_000;
+
 /// Explicit lifecycle status for a prediction pool.
 ///
 /// Transitions:
@@ -268,8 +272,12 @@ impl PredinexContract {
 
         let pool_id = Self::get_pool_counter(&env);
 
+        if duration == 0 || duration > MAX_POOL_DURATION {
+            panic!(format!("Duration must be between 1 and {} seconds", MAX_POOL_DURATION));
+        }
+
         let created_at = env.ledger().timestamp();
-        let expiry = created_at + duration;
+        let expiry = created_at.checked_add(duration).expect("Expiry overflow");
 
         let pool = Pool {
             creator: creator.clone(),
@@ -344,9 +352,9 @@ impl PredinexContract {
         token_client.transfer(&user, &env.current_contract_address(), &amount);
 
         if outcome == 0 {
-            pool.total_a += amount;
+            pool.total_a = pool.total_a.checked_add(amount).expect("Pool total overflow");
         } else {
-            pool.total_b += amount;
+            pool.total_b = pool.total_b.checked_add(amount).expect("Pool total overflow");
         }
 
         let mut user_bet = env
@@ -375,11 +383,11 @@ impl PredinexContract {
         );
 
         if outcome == 0 {
-            user_bet.amount_a += amount;
+            user_bet.amount_a = user_bet.amount_a.checked_add(amount).expect("User bet overflow");
         } else {
-            user_bet.amount_b += amount;
+            user_bet.amount_b = user_bet.amount_b.checked_add(amount).expect("User bet overflow");
         }
-        user_bet.total_bet += amount;
+        user_bet.total_bet = user_bet.total_bet.checked_add(amount).expect("User bet overflow");
 
         env.storage()
             .persistent()
@@ -514,8 +522,14 @@ impl PredinexContract {
         } else {
             pool.total_b
         };
-        let total_pool_volume = pool.total_a + pool.total_b;
-        let fee_amount = (total_pool_volume * 2) / 100;
+        let total_pool_volume = pool
+            .total_a
+            .checked_add(pool.total_b)
+            .expect("Pool total overflow");
+        let fee_amount = total_pool_volume
+            .checked_mul(2)
+            .and_then(|v| v.checked_div(100))
+            .expect("Fee calculation overflow");
 
         env.storage()
             .persistent()
@@ -673,12 +687,23 @@ impl PredinexContract {
         } else {
             pool.total_b
         };
-        let total_pool_balance = pool.total_a + pool.total_b;
+        let total_pool_balance = pool
+            .total_a
+            .checked_add(pool.total_b)
+            .expect("Pool total overflow");
 
-        let fee = (total_pool_balance * 2) / 100;
-        let net_pool_balance = total_pool_balance - fee;
+        let fee = total_pool_balance
+            .checked_mul(2)
+            .and_then(|v| v.checked_div(100))
+            .expect("Fee calculation overflow");
+        let net_pool_balance = total_pool_balance
+            .checked_sub(fee)
+            .expect("Net pool balance underflow");
 
-        let winnings = (user_winning_bet * net_pool_balance) / pool_winning_total;
+        let winnings = user_winning_bet
+            .checked_mul(net_pool_balance)
+            .and_then(|v| v.checked_div(pool_winning_total))
+            .expect("Winnings calculation overflow");
 
         // Step 2: transfer tokens to the winner first. If the transfer fails the
         // transaction reverts and treasury/bet state remain unchanged.
@@ -696,9 +721,12 @@ impl PredinexContract {
             .persistent()
             .get(&DataKey::Treasury)
             .unwrap_or(0);
+        let updated_treasury = current_treasury
+            .checked_add(fee)
+            .expect("Treasury total overflow");
         env.storage()
             .persistent()
-            .set(&DataKey::Treasury, &(current_treasury + fee));
+            .set(&DataKey::Treasury, &updated_treasury);
 
         // Step 4: remove the bet record to prevent duplicate claims.
         env.storage()

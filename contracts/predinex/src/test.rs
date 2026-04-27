@@ -36,6 +36,142 @@ fn test_create_pool() {
 }
 
 #[test]
+#[should_panic(expected = "Duration must be between 1 and 1000000 seconds")]
+fn test_create_pool_rejects_duration_above_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &1_000_001,
+    );
+}
+
+#[test]
+fn test_create_pool_accepts_duration_just_below_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    env.ledger().with_mut(|li| li.timestamp = 42);
+
+    let creator = Address::generate(&env);
+    let duration = 999_999;
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &duration,
+    );
+
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.expiry, 42 + duration);
+}
+
+#[test]
+fn test_large_pool_payouts_with_checked_arithmetic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    let large_amount_a = 1_000_000_000_000_000_000i128;
+    let large_amount_b = 2_000_000_000_000_000_000i128;
+
+    token_admin_client.mint(&user1, &(large_amount_a + 100));
+    token_admin_client.mint(&user2, &(large_amount_b + 100));
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user1, &pool_id, &0, &large_amount_a);
+    client.place_bet(&user2, &pool_id, &1, &large_amount_b);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
+
+    client.settle_pool(&creator, &pool_id, &0);
+
+    let winnings = client.claim_winnings(&user1, &pool_id);
+    assert!(winnings > 0, "Large pool winnings must compute successfully");
+    assert_eq!(token.balance(&user1), 100 + winnings);
+}
+
+#[test]
+fn test_place_bet_rejects_pool_total_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    let huge_amount = i128::MAX - 1;
+
+    token_admin_client.mint(&user1, &huge_amount);
+    token_admin_client.mint(&user2, &100);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user1, &pool_id, &0, &huge_amount);
+
+    // Overflow on the second bet should fail predictably.
+    let result = std::panic::catch_unwind(|| {
+        client.place_bet(&user2, &pool_id, &0, &2);
+    });
+
+    assert!(result.is_err(), "Pool total overflow should reject the second bet");
+}
+
+#[test]
 fn test_place_bet() {
     let env = Env::default();
     env.mock_all_auths();
