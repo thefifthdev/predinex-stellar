@@ -1877,3 +1877,86 @@ fn test_set_creation_fee_negative_rejected() {
 
     client.set_creation_fee(&treasury_recipient, &-1);
 }
+
+// ── Issue #173: get_claim_status read method ──────────────────────────────────
+
+/// Transitions for a winning bettor: NeverBet → NotEligible (open) → Claimable → AlreadyClaimed.
+#[test]
+fn claim_status_winner_transitions() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let winner = Address::generate(&t.env);
+    let loser = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&winner, &500);
+    token_admin.mint(&loser, &500);
+
+    // Before any bet: NeverBet
+    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::NeverBet);
+
+    t.client.place_bet(&winner, &pool_id, &0, &300); // outcome A
+    t.client.place_bet(&loser, &pool_id, &1, &200);  // outcome B
+
+    // After bet, pool still open: NotEligible (no claim available yet)
+    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::NotEligible);
+
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0); // A wins
+
+    // After settlement, winner: Claimable
+    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::Claimable);
+    // After settlement, loser: NotEligible
+    assert_eq!(t.client.get_claim_status(&pool_id, &loser), super::ClaimStatus::NotEligible);
+
+    t.client.claim_winnings(&winner, &pool_id);
+
+    // After claim: AlreadyClaimed
+    assert_eq!(t.client.get_claim_status(&pool_id, &winner), super::ClaimStatus::AlreadyClaimed);
+}
+
+/// Losing bettor status is NotEligible, distinct from NeverBet.
+#[test]
+fn claim_status_loser_is_not_eligible_not_never_bet() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let loser = Address::generate(&t.env);
+    let winner = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&loser, &100);
+    token_admin.mint(&winner, &100);
+
+    t.client.place_bet(&loser, &pool_id, &1, &100);  // outcome B
+    t.client.place_bet(&winner, &pool_id, &0, &100); // outcome A
+
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0); // A wins
+
+    let loser_status = t.client.get_claim_status(&pool_id, &loser);
+    let never_bet_status = t.client.get_claim_status(&pool_id, &Address::generate(&t.env));
+
+    assert_eq!(loser_status, super::ClaimStatus::NotEligible);
+    assert_eq!(never_bet_status, super::ClaimStatus::AlreadyClaimed); // settled pool, no record
+    assert_ne!(loser_status, never_bet_status);
+}
+
+/// Voided pool: RefundClaimable → AlreadyClaimed after claim_refund.
+#[test]
+fn claim_status_voided_pool_transitions() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    let user = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&user, &200);
+
+    t.client.place_bet(&user, &pool_id, &0, &200);
+    t.client.void_pool(&t.admin, &pool_id);
+
+    assert_eq!(t.client.get_claim_status(&pool_id, &user), super::ClaimStatus::RefundClaimable);
+
+    t.client.claim_refund(&user, &pool_id);
+
+    assert_eq!(t.client.get_claim_status(&pool_id, &user), super::ClaimStatus::AlreadyClaimed);
+}

@@ -65,6 +65,29 @@ pub struct Pool {
     pub status: PoolStatus,
 }
 
+/// Claim status for a user in a specific pool.
+///
+/// Transitions (winner):
+///   NeverBet  ──(place_bet)──►  Claimable  ──(claim_winnings)──►  AlreadyClaimed
+/// Transitions (loser):
+///   NeverBet  ──(place_bet)──►  NotEligible
+/// Transitions (voided pool):
+///   NeverBet  ──(place_bet)──►  RefundClaimable  ──(claim_refund)──►  AlreadyClaimed
+#[derive(Clone, PartialEq, Debug)]
+#[contracttype]
+pub enum ClaimStatus {
+    /// User has never placed a bet in this pool.
+    NeverBet,
+    /// Pool is settled, user bet on the winning side, and has not yet claimed.
+    Claimable,
+    /// Pool is voided, user has a stake, and has not yet claimed a refund.
+    RefundClaimable,
+    /// User bet on the losing side; no winnings available.
+    NotEligible,
+    /// User has already claimed (bet record removed).
+    AlreadyClaimed,
+}
+
 #[derive(Clone)]
 #[contracttype]
 pub struct UserBet {
@@ -834,6 +857,60 @@ impl PredinexContract {
         env.storage()
             .persistent()
             .get(&DataKey::UserBet(pool_id, user))
+    }
+
+    /// Return the claim status for `user` in `pool_id`.
+    ///
+    /// | Pool state  | Bet record present?        | Result            |
+    /// |-------------|----------------------------|-------------------|
+    /// | Any         | No                         | NeverBet or AlreadyClaimed* |
+    /// | Open        | Yes                        | NotEligible (not yet settleable) |
+    /// | Settled(w)  | Yes, bet on winning side   | Claimable         |
+    /// | Settled(w)  | Yes, bet on losing side    | NotEligible       |
+    /// | Voided      | Yes                        | RefundClaimable   |
+    /// | Any         | No (was removed by claim)  | AlreadyClaimed**  |
+    ///
+    /// */**  Once a claim is made the bet record is deleted, so the method
+    /// returns `AlreadyClaimed` when the pool is settled/voided but no record
+    /// exists — distinguishing it from `NeverBet` (pool still open).
+    pub fn get_claim_status(env: Env, pool_id: u32, user: Address) -> ClaimStatus {
+        let pool = match env
+            .storage()
+            .persistent()
+            .get::<_, Pool>(&DataKey::Pool(pool_id))
+        {
+            Some(p) => p,
+            None => return ClaimStatus::NeverBet,
+        };
+
+        let bet: Option<UserBet> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserBet(pool_id, user));
+
+        match pool.status {
+            PoolStatus::Voided => match bet {
+                Some(_) => ClaimStatus::RefundClaimable,
+                None => ClaimStatus::AlreadyClaimed,
+            },
+            PoolStatus::Settled(winning_outcome) => match bet {
+                None => ClaimStatus::AlreadyClaimed,
+                Some(b) => {
+                    let winning_stake = if winning_outcome == 0 { b.amount_a } else { b.amount_b };
+                    if winning_stake > 0 {
+                        ClaimStatus::Claimable
+                    } else {
+                        ClaimStatus::NotEligible
+                    }
+                }
+            },
+            // Pool not yet settled — if the user has a bet record they are a
+            // participant but no claim action is available yet.
+            _ => match bet {
+                Some(_) => ClaimStatus::NotEligible,
+                None => ClaimStatus::NeverBet,
+            },
+        }
     }
 
     pub fn get_participant_count(env: Env, pool_id: u32) -> u32 {
